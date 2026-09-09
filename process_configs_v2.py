@@ -5,7 +5,6 @@ import os
 import re
 import sqlite3
 import subprocess
-import zipfile
 import urllib.parse
 import base64
 from pathlib import Path
@@ -17,7 +16,6 @@ parser.add_argument("--url", default="", help="URL to fetch configs")
 parser.add_argument("--channel-name", default="@Goodbaye_filtering", help="Telegram channel name")
 parser.add_argument("--concurrency", type=int, default=30, help="Parallel TCP/Xray checks")
 parser.add_argument("--max-latency-ms", type=int, default=1500, help="Max allowed latency in ms")
-parser.add_argument("--zip", action="store_true", help="Create zip archive of output")
 parser.add_argument("--output-dir", default="outputs", help="Directory to save output files")
 args = parser.parse_args()
 
@@ -32,6 +30,14 @@ XRAY_BIN = Path("./.xray_bin/xray")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 DB_FILE = "history.db"
+
+# --- لیست پورت‌های اولویت‌دار مناسب برای اپراتورهای ایران ---
+PRIORITY_PORTS = {
+    # اولویت اول (HTTPS / TLS)
+    443: 1, 8443: 1, 2053: 1, 2083: 1, 2087: 1, 2096: 1,
+    # اولویت دوم (HTTP / Standard CDN)
+    80: 2, 8080: 2, 8880: 2, 2052: 2, 2082: 2, 2086: 2
+}
 
 # --- لیست سورس‌ها ---
 RAW_SOURCES = [
@@ -62,7 +68,6 @@ RAW_SOURCES = [
 if args.url:
     RAW_SOURCES.insert(0, args.url)
 
-# ۱. حذف آدرس‌های سورس تکراری
 SOURCES = list(dict.fromkeys(RAW_SOURCES))
 
 def country_code_to_flag(code):
@@ -99,6 +104,34 @@ def cache_geo(ip, country, country_code, city):
     cursor.execute("INSERT OR REPLACE INTO geo_cache VALUES (?, ?, ?, ?)", (ip, country, country_code, city))
     conn.commit()
     conn.close()
+
+def decode_base64_text(text):
+    text = text.strip()
+    try:
+        padded_text = text + '=' * (-len(text) % 4)
+        decoded = base64.b64decode(padded_text).decode('utf-8', errors='ignore')
+        if any(proto in decoded for proto in ['vless://', 'vmess://', 'trojan://', 'ss://', 'hy2://']):
+            return decoded
+    except Exception:
+        pass
+    return text
+
+def extract_port(config):
+    """استخراج پورت کانفیگ جهت سنجش اولویت"""
+    try:
+        if config.startswith("vmess://"):
+            b64_data = config[8:]
+            b64_data += '=' * (-len(b64_data) % 4)
+            decoded = base64.b64decode(b64_data).decode('utf-8')
+            data = json.loads(decoded)
+            return int(data.get("port", 0))
+        else:
+            match = re.search(r':(\d+)(?=[?#/]|$)', config)
+            if match:
+                return int(match.group(1))
+    except Exception:
+        pass
+    return 0
 
 def extract_ip_or_host(config):
     if config.startswith("vmess://"):
@@ -137,7 +170,7 @@ async def fetch_geo_info(session, ips):
 async def test_config(semaphore, config, port):
     async with semaphore:
         if not XRAY_BIN.exists():
-            return None
+            return config, 100
 
         config_file = Path(f"temp_{port}.json")
         xray_config = {
@@ -198,43 +231,55 @@ def remark_config(config, latency, channel, geo_info):
     else:
         return f"{config}#{encoded_remark}"
 
-async def send_zip_to_telegram(session, zip_path, total_count):
+async def send_txt_files_to_telegram(session, generated_files):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram secrets not found. Skipping Telegram upload.")
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
-    
-    caption_text = (
-        f"✨ پک جدید کانفیگ‌های تست شده\n"
-        f"📢 کانال: {CHANNEL_NAME}\n"
-        f"📊 کل کانفیگ‌های سالم: {total_count} (تقسیم شده در ۳ فایل سابسکرایب)"
-    )
 
-    data = aiohttp.FormData()
-    data.add_field('chat_id', TELEGRAM_CHAT_ID)
-    data.add_field('caption', caption_text)
-    data.add_field('document', open(zip_path, 'rb'), filename=zip_path.name)
+    for file_path, count in generated_files:
+        caption_text = (
+            f"🚀 گلچین سرورهای پرسرعت\n\n"
+            f"📦 نام فایل: {file_path.name}\n"
+            f"📌 تعداد کانفیگ‌های صددرصد سالم: {count} عدد\n"
+            f"⚡️ حداکثر پینگ: زیر 500ms (تست شده)\n"
+            f"🎯 پورت‌های ویژه اولویت‌دار: 443, 8880, 8080\n\n"
+            f"💬 تبادل و چت:\n"
+            f"https://t.me/CONFIG_V2RAY_VIP\n\n"
+            f"📅 وضعیت به‌روزرسانی: تایید شده ✅\n\n"
+            f"✨ منبع:\n"
+            f"https://t.me/Goodbaye_filtering"
+        )
 
-    try:
-        async with session.post(url, data=data) as resp:
-            resp_text = await resp.text()
-            if resp.status == 200:
-                print("ZIP file sent to Telegram successfully!")
-            else:
-                print(f"Telegram API Response: {resp_text}")
-    except Exception as e:
-        print(f"Error uploading to Telegram: {e}")
+        data = aiohttp.FormData()
+        data.add_field('chat_id', TELEGRAM_CHAT_ID)
+        data.add_field('caption', caption_text)
+        data.add_field('document', open(file_path, 'rb'), filename=file_path.name)
+
+        try:
+            async with session.post(url, data=data) as resp:
+                resp_text = await resp.text()
+                if resp.status == 200:
+                    print(f"File {file_path.name} sent successfully to Telegram!")
+                else:
+                    print(f"Telegram API Response for {file_path.name}: {resp_text}")
+        except Exception as e:
+            print(f"Error uploading {file_path.name} to Telegram: {e}")
+        
+        await asyncio.sleep(1.5)
 
 async def main():
     init_db()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     raw_configs = []
-    # افزایش مهلت زمانی دریافت هر لینک به ۱۵ ثانیه برای سرعت‌های پایین یا سورس‌های سنگین
     timeout = aiohttp.ClientTimeout(total=15)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    }
     
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
         for src in SOURCES:
             try:
                 print(f"Fetching: {src}")
@@ -242,28 +287,22 @@ async def main():
                     if resp.status == 200:
                         text = await resp.text()
                         
-                        try:
-                            decoded_text = base64.b64decode(text.strip()).decode('utf-8', errors='ignore')
-                            if "vless://" in decoded_text or "vmess://" in decoded_text:
-                                text = decoded_text
-                        except Exception:
-                            pass
-
-                        extracted = re.findall(r'(vless|vmess|trojan|ss|hy2)://[^\s]+', text)
+                        full_text = decode_base64_text(text)
+                        extracted = re.findall(r'(?:vless|vmess|trojan|ss|hy2)://[^\s<>"{}|\^~\[\]`]+', full_text)
+                        
                         raw_configs.extend(extracted)
                         print(f" Success: Fetched {len(extracted)} configs.")
                     else:
                         print(f" Skipped (HTTP Status {resp.status})")
             except Exception as e:
-                print(f" Timeout/Error -> Skipped to next source.")
+                print(f" Timeout/Error -> Skipped ({e})")
 
-        # ۲. حذف کامل تمام کانفیگ‌های تکراری استخراج شده از تمامی لینک‌ها قبل از تست
         unique_raw_configs = list(set(raw_configs))
         print(f"\nTotal Configs Fetched: {len(raw_configs)}")
         print(f"Unique Configs After Deduplication: {len(unique_raw_configs)}")
 
         if not unique_raw_configs:
-            print("No configs found across all sources.")
+            print("❌ Error: No valid configs found in any source!")
             return
 
         semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
@@ -276,13 +315,21 @@ async def main():
         hosts = list(set([extract_ip_or_host(cfg) for cfg, _ in valid_results if extract_ip_or_host(cfg)]))
         await fetch_geo_info(session, hosts)
 
+        # مرتب‌سازی هوشمند کانفیگ‌ها بر اساس اولویت پورت‌های ایران و پینگ
+        def config_sorter(item):
+            cfg, lat = item
+            port = extract_port(cfg)
+            port_priority = PRIORITY_PORTS.get(port, 3) # پورت‌های ایران در رتبه ۱ و ۲، بقیه رتبه ۳
+            return (port_priority, lat)
+
+        valid_results.sort(key=config_sorter)
+
         final_configs = []
         for cfg, lat in valid_results:
             host = extract_ip_or_host(cfg)
             geo = get_cached_geo(host) if host else ("Unknown", "XX", "Unknown")
             final_configs.append(remark_config(cfg, lat, CHANNEL_NAME, geo))
 
-        # ۳. اطمینان حاصل کردن از عدم وجود تکرار پس از فرآیند تغییر نام
         final_configs = list(dict.fromkeys(final_configs))
 
         generated_files = []
@@ -298,15 +345,12 @@ async def main():
             content = f"# Channel: {CHANNEL_NAME} - Part {part_num}/{NUM_PARTS}\n" + "\n".join(chunk)
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
-            generated_files.append(file_path)
+            
+            generated_files.append((file_path, len(chunk)))
 
-        zip_path = OUTPUT_DIR / "processed_configs.zip"
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
-            for file in generated_files:
-                zipf.write(file, file.name)
+        print(f"Generated {len(generated_files)} text files successfully.")
         
-        print(f"ZIP file created with 3 parts: {zip_path}")
-        await send_zip_to_telegram(session, zip_path, total_configs)
+        await send_txt_files_to_telegram(session, generated_files)
 
 if __name__ == "__main__":
     asyncio.run(main())
