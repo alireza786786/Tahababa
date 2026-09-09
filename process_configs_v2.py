@@ -14,7 +14,6 @@ import aiohttp
 parser = argparse.ArgumentParser(description="Advanced V2Ray Collector & Tester")
 parser.add_argument("--url", default="https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/refs/heads/main/vless_configs.txt", help="URL to fetch configs")
 parser.add_argument("--channel-name", default="@Goodbaye_filtering", help="Telegram channel name")
-parser.add_argument("--split-size", type=int, default=300, help="Max configs per split file")
 parser.add_argument("--concurrency", type=int, default=20, help="Parallel TCP/Xray checks")
 parser.add_argument("--max-latency-ms", type=int, default=250, help="Max allowed latency in ms")
 parser.add_argument("--zip", action="store_true", help="Create zip archive of output")
@@ -24,7 +23,7 @@ args = parser.parse_args()
 # --- تنظیمات ---
 CONFIG_URL = args.url
 CHANNEL_NAME = args.channel_name
-SPLIT_SIZE = args.split_size
+NUM_PARTS = 3  # تقسیم دقیق کانفیگ‌ها به ۳ فایل
 CONCURRENCY_LIMIT = args.concurrency
 MAX_LATENCY_MS = args.max_latency_ms
 OUTPUT_DIR = Path(args.output_dir)
@@ -82,7 +81,6 @@ def extract_ip_or_host(config):
 async def fetch_geo_info(session, ips):
     ips_to_fetch = [ip for ip in ips if not get_cached_geo(ip)]
     if ips_to_fetch:
-        # دریافت اطلاعات ۵۰ تایی جهت جلوگیری از بن شدن IP-API
         for i in range(0, len(ips_to_fetch), 50):
             chunk = ips_to_fetch[i:i+50]
             try:
@@ -146,7 +144,6 @@ def remark_config(config, latency, channel, geo_info):
     new_remark = f"👉🆔{channel}📡{flag}®️{country}©️{city}🅿️ping:{latency}ms"
     encoded_remark = urllib.parse.quote(new_remark)
 
-    # جایگزینی یا افزودن Remark جدید در انتهای لینک
     if '#' in config:
         base_url = config.split('#')[0]
         return f"{base_url}#{encoded_remark}"
@@ -154,16 +151,23 @@ def remark_config(config, latency, channel, geo_info):
         return f"{config}#{encoded_remark}"
 
 # --- ۷. ارسال زیپ به تلگرام ---
-async def send_zip_to_telegram(session, zip_path):
+async def send_zip_to_telegram(session, zip_path, total_count):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram secrets missing. Skipping upload.")
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
     
+    caption_text = (
+        f"✨ **پک جدید کانفیگ‌های تست شده**\n"
+        f"📢 کانال: {CHANNEL_NAME}\n"
+        f"📊 کل کانفیگ‌های سالم: `{total_count}` (تقسیم شده در ۳ فایل سابسکرایب)"
+    )
+
     data = aiohttp.FormData()
     data.add_field('chat_id', TELEGRAM_CHAT_ID)
-    data.add_field('caption', f"✨ **پک جدید کانفیگ‌های تست شده**\n📢 کانال: {CHANNEL_NAME}")
+    data.add_field('caption', caption_text)
+    data.add_field('parse_mode', 'Markdown')
     data.add_field('document', open(zip_path, 'rb'), filename=zip_path.name)
 
     try:
@@ -212,12 +216,18 @@ async def main():
             geo = get_cached_geo(host) if host else ("Unknown", "XX", "Unknown")
             final_configs.append(remark_config(cfg, lat, CHANNEL_NAME, geo))
 
-        # ۶. تقسیم‌بندی فایل‌ها
+        # ۶. تقسیم‌بندی دقیق کانفیگ‌ها به ۳ فایل (Part 1, Part 2, Part 3)
         generated_files = []
-        for i in range(0, len(final_configs), SPLIT_SIZE):
-            chunk = final_configs[i:i + SPLIT_SIZE]
-            file_path = OUTPUT_DIR / f"subscription_part{i//SPLIT_SIZE + 1}.txt"
-            content = f"# Channel: {CHANNEL_NAME}\n" + "\n".join(chunk)
+        total_configs = len(final_configs)
+        part_size = (total_configs + NUM_PARTS - 1) // NUM_PARTS if total_configs > 0 else 0
+
+        for part_num in range(1, NUM_PARTS + 1):
+            start_idx = (part_num - 1) * part_size
+            end_idx = min(start_idx + part_size, total_configs)
+            chunk = final_configs[start_idx:end_idx]
+
+            file_path = OUTPUT_DIR / f"subscription_part{part_num}.txt"
+            content = f"# Channel: {CHANNEL_NAME} - Part {part_num}/{NUM_PARTS}\n" + "\n".join(chunk)
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(content)
             generated_files.append(file_path)
@@ -228,8 +238,8 @@ async def main():
             for file in generated_files:
                 zipf.write(file, file.name)
         
-        print(f"ZIP file created: {zip_path}")
-        await send_zip_to_telegram(session, zip_path)
+        print(f"ZIP file created with 3 parts: {zip_path}")
+        await send_zip_to_telegram(session, zip_path, total_configs)
 
 if __name__ == "__main__":
     asyncio.run(main())
