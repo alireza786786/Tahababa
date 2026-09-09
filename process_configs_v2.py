@@ -7,21 +7,21 @@ import sqlite3
 import subprocess
 import zipfile
 import urllib.parse
+import base64
 from pathlib import Path
 import aiohttp
 
 # --- ۱. دریافت ورودی‌های خط فرمان ---
 parser = argparse.ArgumentParser(description="Advanced V2Ray Collector & Tester")
-parser.add_argument("--url", default="https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/refs/heads/main/vless_configs.txt", help="URL to fetch configs")
+parser.add_argument("--url", default="", help="URL to fetch configs")
 parser.add_argument("--channel-name", default="@Goodbaye_filtering", help="Telegram channel name")
-parser.add_argument("--concurrency", type=int, default=20, help="Parallel TCP/Xray checks")
-parser.add_argument("--max-latency-ms", type=int, default=250, help="Max allowed latency in ms")
+parser.add_argument("--concurrency", type=int, default=30, help="Parallel TCP/Xray checks")
+parser.add_argument("--max-latency-ms", type=int, default=1500, help="Max allowed latency in ms")
 parser.add_argument("--zip", action="store_true", help="Create zip archive of output")
 parser.add_argument("--output-dir", default="outputs", help="Directory to save output files")
 args = parser.parse_args()
 
 # --- تنظیمات ---
-CONFIG_URL = args.url
 CHANNEL_NAME = args.channel_name
 NUM_PARTS = 3
 CONCURRENCY_LIMIT = args.concurrency
@@ -29,10 +29,41 @@ MAX_LATENCY_MS = args.max_latency_ms
 OUTPUT_DIR = Path(args.output_dir)
 XRAY_BIN = Path("./.xray_bin/xray")
 
-# دریافت ایمن از متغیرهای محیطی
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 DB_FILE = "history.db"
+
+# --- لیست سورس‌ها ---
+RAW_SOURCES = [
+    "https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/mix",
+    "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_BASE64.txt",
+    "https://manager.onetwothree123.ir/",
+    "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/top100.txt",
+    "https://raw.githubusercontent.com/Q3dlaXpoaQ/Q3dlaXpoaQ.github.io/refs/heads/main/APIs/cg1.txt",
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/refs/heads/main/mci/sub_1.txt",
+    "https://raw.githubusercontent.com/mahsanet/MahsaFreeConfig/main/mtn/sub_1.txt",
+    "https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/refs/heads/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+    "https://raw.githubusercontent.com/ShatakVPN/ConfigForge-V2Ray/refs/heads/main/configs/ir/vless.txt",
+    "https://raw.githubusercontent.com/Surfboardv2ray/TGParse/refs/heads/main/splitted/hysteria2",
+    "https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/vless.txt",
+    "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/refs/heads/main/protocols/hysteria2.txt",
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no1.txt",
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no2.txt",
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no3.txt",
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no4.txt",
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no5.txt",
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no6.txt",
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no7.txt",
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no8.txt",
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no9.txt",
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no10.txt"
+]
+
+if args.url:
+    RAW_SOURCES.insert(0, args.url)
+
+# ۱. حذف آدرس‌های سورس تکراری
+SOURCES = list(dict.fromkeys(RAW_SOURCES))
 
 def country_code_to_flag(code):
     if not code or len(code) != 2:
@@ -70,13 +101,23 @@ def cache_geo(ip, country, country_code, city):
     conn.close()
 
 def extract_ip_or_host(config):
-    match = re.search(r'@([^:\s/?#]+)', config)
-    if match:
-        return match.group(1)
+    if config.startswith("vmess://"):
+        try:
+            b64_data = config[8:]
+            b64_data += '=' * (-len(b64_data) % 4)
+            decoded = base64.b64decode(b64_data).decode('utf-8')
+            data = json.loads(decoded)
+            return data.get("add")
+        except Exception:
+            return None
+    else:
+        match = re.search(r'@([^:\s/?#]+)', config)
+        if match:
+            return match.group(1)
     return None
 
 async def fetch_geo_info(session, ips):
-    ips_to_fetch = [ip for ip in ips if not get_cached_geo(ip)]
+    ips_to_fetch = [ip for ip in ips if ip and not get_cached_geo(ip)]
     if ips_to_fetch:
         for i in range(0, len(ips_to_fetch), 50):
             chunk = ips_to_fetch[i:i+50]
@@ -137,8 +178,20 @@ def remark_config(config, latency, channel, geo_info):
     flag = country_code_to_flag(country_code)
     
     new_remark = f"👉🆔{channel}📡{flag}®️{country}©️{city}🅿️ping:{latency}ms"
-    encoded_remark = urllib.parse.quote(new_remark)
 
+    if config.startswith("vmess://"):
+        try:
+            b64_data = config[8:]
+            b64_data += '=' * (-len(b64_data) % 4)
+            decoded = base64.b64decode(b64_data).decode('utf-8')
+            data = json.loads(decoded)
+            data["ps"] = new_remark
+            new_b64 = base64.b64encode(json.dumps(data).encode('utf-8')).decode('utf-8')
+            return f"vmess://{new_b64}"
+        except Exception:
+            return config
+
+    encoded_remark = urllib.parse.quote(new_remark)
     if '#' in config:
         base_url = config.split('#')[0]
         return f"{base_url}#{encoded_remark}"
@@ -153,15 +206,14 @@ async def send_zip_to_telegram(session, zip_path, total_count):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
     
     caption_text = (
-        f"✨ **پک جدید کانفیگ‌های تست شده**\n"
+        f"✨ پک جدید کانفیگ‌های تست شده\n"
         f"📢 کانال: {CHANNEL_NAME}\n"
-        f"📊 کل کانفیگ‌های سالم: `{total_count}` (تقسیم شده در ۳ فایل سابسکرایب)"
+        f"📊 کل کانفیگ‌های سالم: {total_count} (تقسیم شده در ۳ فایل سابسکرایب)"
     )
 
     data = aiohttp.FormData()
     data.add_field('chat_id', TELEGRAM_CHAT_ID)
     data.add_field('caption', caption_text)
-    data.add_field('parse_mode', 'Markdown')
     data.add_field('document', open(zip_path, 'rb'), filename=zip_path.name)
 
     try:
@@ -178,19 +230,44 @@ async def main():
     init_db()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
-    async with aiohttp.ClientSession() as session:
-        print(f"Fetching configs from: {CONFIG_URL}")
-        async with session.get(CONFIG_URL) as resp:
-            if resp.status != 200:
-                print("Failed to fetch configs URL")
-                return
-            text = await resp.text()
+    raw_configs = []
+    # افزایش مهلت زمانی دریافت هر لینک به ۱۵ ثانیه برای سرعت‌های پایین یا سورس‌های سنگین
+    timeout = aiohttp.ClientTimeout(total=15)
+    
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for src in SOURCES:
+            try:
+                print(f"Fetching: {src}")
+                async with session.get(src) as resp:
+                    if resp.status == 200:
+                        text = await resp.text()
+                        
+                        try:
+                            decoded_text = base64.b64decode(text.strip()).decode('utf-8', errors='ignore')
+                            if "vless://" in decoded_text or "vmess://" in decoded_text:
+                                text = decoded_text
+                        except Exception:
+                            pass
 
-        raw_configs = list(set(re.findall(r'(vless|vmess|trojan|ss|hy2)://[^\s]+', text)))
-        print(f"Total Unique Configs: {len(raw_configs)}")
+                        extracted = re.findall(r'(vless|vmess|trojan|ss|hy2)://[^\s]+', text)
+                        raw_configs.extend(extracted)
+                        print(f" Success: Fetched {len(extracted)} configs.")
+                    else:
+                        print(f" Skipped (HTTP Status {resp.status})")
+            except Exception as e:
+                print(f" Timeout/Error -> Skipped to next source.")
+
+        # ۲. حذف کامل تمام کانفیگ‌های تکراری استخراج شده از تمامی لینک‌ها قبل از تست
+        unique_raw_configs = list(set(raw_configs))
+        print(f"\nTotal Configs Fetched: {len(raw_configs)}")
+        print(f"Unique Configs After Deduplication: {len(unique_raw_configs)}")
+
+        if not unique_raw_configs:
+            print("No configs found across all sources.")
+            return
 
         semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
-        tasks = [test_config(semaphore, cfg, 10000 + (idx % 1000)) for idx, cfg in enumerate(raw_configs)]
+        tasks = [test_config(semaphore, cfg, 10000 + (idx % 1000)) for idx, cfg in enumerate(unique_raw_configs)]
         results = await asyncio.gather(*tasks)
         valid_results = [r for r in results if r is not None]
 
@@ -204,6 +281,9 @@ async def main():
             host = extract_ip_or_host(cfg)
             geo = get_cached_geo(host) if host else ("Unknown", "XX", "Unknown")
             final_configs.append(remark_config(cfg, lat, CHANNEL_NAME, geo))
+
+        # ۳. اطمینان حاصل کردن از عدم وجود تکرار پس از فرآیند تغییر نام
+        final_configs = list(dict.fromkeys(final_configs))
 
         generated_files = []
         total_configs = len(final_configs)
