@@ -17,6 +17,7 @@ parser.add_argument("--channel-name", default="@Goodbaye_filtering", help="Teleg
 parser.add_argument("--concurrency", type=int, default=30, help="Parallel TCP/Xray checks")
 parser.add_argument("--max-latency-ms", type=int, default=1500, help="Max allowed latency in ms")
 parser.add_argument("--output-dir", default="outputs", help="Directory to save output files")
+parser.add_argument("--zip", action="store_true", help="Legacy flag for backwards compatibility")
 args = parser.parse_args()
 
 # --- تنظیمات ---
