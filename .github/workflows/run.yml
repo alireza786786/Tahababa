@@ -18,16 +18,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+        uses: actions/setup-python@v5.4.0
 
       - name: Cache Xray Binary
         id: cache-xray
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.0
         with:
           path: ./.xray_bin
           key: ${{ runner.os }}-xray-bin-v1
@@ -57,7 +55,6 @@ jobs:
             --max-latency-ms 250 \
             --zip --output-dir outputs
 
-      # آپلود و ثبت تغییرات فایل‌های سابسکرایب روی ریپازیتوری
       - name: Commit & Push updated subscriptions
         run: |
           git config --local user.email "action@github.com"
