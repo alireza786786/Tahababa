@@ -1,1 +1,70 @@
+name: Process large config lists and send to Telegram (v2)
 
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Raw URL to fetch configs'
+        required: true
+        default: 'https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/refs/heads/main/vless_configs.txt'
+      channel_name:
+        description: 'Telegram channel name'
+        required: true
+        default: '@Goodbaye_filtering'
+      split_size:
+        description: 'Max configs per output file'
+        required: false
+        default: '300'
+      concurrency:
+        description: 'Parallel TCP checks'
+        required: false
+        default: '20' # کاهش همزمانی از ۱۰۰ به ۲۰ جهت جلوگیری از بن شدن
+      max_latency_ms:
+        description: 'Latency threshold (ms)'
+        required: false
+        default: '250'
+      zip:
+        description: 'Create zip?'
+        required: false
+        default: 'true'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # کاهش سقف زمان اجرا از ۱۸۰ به ۱۵ دقیقه
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run processor (v2)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          zip_flag=""
+          if [ "${{ github.event.inputs.zip }}" = "true" ]; then zip_flag="--zip"; fi
+          python process_configs_v2.py \
+            --url "${{ github.event.inputs.url }}" \
+            --channel-name "${{ github.event.inputs.channel_name }}" \
+            --split-size ${{ github.event.inputs.split_size }} \
+            --concurrency ${{ github.event.inputs.concurrency }} \
+            --max-latency-ms ${{ github.event.inputs.max_latency_ms }} \
+            ${zip_flag} --output-dir outputs
+
+      - name: Upload zip as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: processed-configs-zip
+          path: outputs/
