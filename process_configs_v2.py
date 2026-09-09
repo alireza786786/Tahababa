@@ -23,24 +23,23 @@ args = parser.parse_args()
 # --- تنظیمات ---
 CONFIG_URL = args.url
 CHANNEL_NAME = args.channel_name
-NUM_PARTS = 3  # تقسیم دقیق کانفیگ‌ها به ۳ فایل
+NUM_PARTS = 3
 CONCURRENCY_LIMIT = args.concurrency
 MAX_LATENCY_MS = args.max_latency_ms
 OUTPUT_DIR = Path(args.output_dir)
 XRAY_BIN = Path("./.xray_bin/xray")
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# تنظیمات تلگرام (از متغیر محیطی یا مقادیر پیش‌فرض)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7120221440:AAEC2UVLZc8vIugRjmESTZlqSeSZL_Wue2Y")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "-1002128220461")
 DB_FILE = "history.db"
 
-# تبدیل کد کشور به پرچم emoji
 def country_code_to_flag(code):
     if not code or len(code) != 2:
         return "🌐"
     code = code.upper()
     return chr(127397 + ord(code[0])) + chr(127397 + ord(code[1]))
 
-# --- ۲. دیتابیس SQLite جهت ذخیره کش Geolocation ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -70,14 +69,12 @@ def cache_geo(ip, country, country_code, city):
     conn.commit()
     conn.close()
 
-# --- ۳. دریافت و استخراج IP/Domain از کانفیگ ---
 def extract_ip_or_host(config):
     match = re.search(r'@([^:\s/?#]+)', config)
     if match:
         return match.group(1)
     return None
 
-# --- ۴. دریافت اطلاعات جغرافیایی دسته جمعی (Batch IP-API) ---
 async def fetch_geo_info(session, ips):
     ips_to_fetch = [ip for ip in ips if not get_cached_geo(ip)]
     if ips_to_fetch:
@@ -96,7 +93,6 @@ async def fetch_geo_info(session, ips):
             except Exception as e:
                 print(f"Geo Fetch Error: {e}")
 
-# --- ۵. تست کانفیگ با Xray Core ---
 async def test_config(semaphore, config, port):
     async with semaphore:
         if not XRAY_BIN.exists():
@@ -136,7 +132,6 @@ async def test_config(semaphore, config, port):
                 config_file.unlink()
         return None
 
-# --- ۶. فرمت‌دهی و تغییر اسم (Remark) کانفیگ‌ها ---
 def remark_config(config, latency, channel, geo_info):
     country, country_code, city = geo_info if geo_info else ("Unknown", "XX", "Unknown")
     flag = country_code_to_flag(country_code)
@@ -150,12 +145,7 @@ def remark_config(config, latency, channel, geo_info):
     else:
         return f"{config}#{encoded_remark}"
 
-# --- ۷. ارسال زیپ به تلگرام ---
 async def send_zip_to_telegram(session, zip_path, total_count):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram secrets missing. Skipping upload.")
-        return
-
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
     
     caption_text = (
@@ -172,20 +162,19 @@ async def send_zip_to_telegram(session, zip_path, total_count):
 
     try:
         async with session.post(url, data=data) as resp:
+            resp_text = await resp.text()
             if resp.status == 200:
                 print("ZIP file sent to Telegram successfully!")
             else:
-                print(f"Failed to send to Telegram: {await resp.text()}")
+                print(f"Failed to send to Telegram. Response: {resp_text}")
     except Exception as e:
         print(f"Error uploading to Telegram: {e}")
 
-# --- ۸. اجرای اصلی برنامه ---
 async def main():
     init_db()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     async with aiohttp.ClientSession() as session:
-        # ۱. دانلود لیست کانفیگ‌ها
         print(f"Fetching configs from: {CONFIG_URL}")
         async with session.get(CONFIG_URL) as resp:
             if resp.status != 200:
@@ -193,11 +182,9 @@ async def main():
                 return
             text = await resp.text()
 
-        # ۲. استخراج و حذف تکراری‌ها
         raw_configs = list(set(re.findall(r'(vless|vmess|trojan|ss|hy2)://[^\s]+', text)))
         print(f"Total Unique Configs: {len(raw_configs)}")
 
-        # ۳. تست سلامت با Xray
         semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
         tasks = [test_config(semaphore, cfg, 10000 + (idx % 1000)) for idx, cfg in enumerate(raw_configs)]
         results = await asyncio.gather(*tasks)
@@ -205,18 +192,15 @@ async def main():
 
         print(f"Valid Tested Configs: {len(valid_results)}")
 
-        # ۴. دریافت اطلاعات جغرافیایی (Geo IP)
         hosts = list(set([extract_ip_or_host(cfg) for cfg, _ in valid_results if extract_ip_or_host(cfg)]))
         await fetch_geo_info(session, hosts)
 
-        # ۵. بازنویسی اسم کانفیگ‌ها (Remark)
         final_configs = []
         for cfg, lat in valid_results:
             host = extract_ip_or_host(cfg)
             geo = get_cached_geo(host) if host else ("Unknown", "XX", "Unknown")
             final_configs.append(remark_config(cfg, lat, CHANNEL_NAME, geo))
 
-        # ۶. تقسیم‌بندی دقیق کانفیگ‌ها به ۳ فایل (Part 1, Part 2, Part 3)
         generated_files = []
         total_configs = len(final_configs)
         part_size = (total_configs + NUM_PARTS - 1) // NUM_PARTS if total_configs > 0 else 0
@@ -232,7 +216,6 @@ async def main():
                 f.write(content)
             generated_files.append(file_path)
 
-        # ۷. فشرده‌سازی و ارسال زیپ به تلگرام
         zip_path = OUTPUT_DIR / "processed_configs.zip"
         with zipfile.ZipFile(zip_path, 'w') as zipf:
             for file in generated_files:
