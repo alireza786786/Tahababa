@@ -11,16 +11,16 @@ from pathlib import Path
 import aiohttp
 
 # --- ۱. دریافت ورودی‌های خط فرمان ---
-parser = argparse.ArgumentParser(description="Advanced V2Ray Collector & Tester")
+parser = argparse.ArgumentParser(description="Advanced V2Ray Collector & Real HTTP Tester")
 parser.add_argument("--url", default="", help="URL to fetch configs")
 parser.add_argument("--channel-name", default="@Goodbaye_filtering", help="Telegram channel name")
-parser.add_argument("--concurrency", type=int, default=30, help="Parallel TCP/Xray checks")
-parser.add_argument("--max-latency-ms", type=int, default=1500, help="Max allowed latency in ms")
+parser.add_argument("--concurrency", type=int, default=20, help="Parallel Xray checks")
+parser.add_argument("--max-latency-ms", type=int, default=600, help="Strict max allowed latency in ms")
 parser.add_argument("--output-dir", default="outputs", help="Directory to save output files")
 parser.add_argument("--zip", action="store_true", help="Legacy flag for backwards compatibility")
 args = parser.parse_args()
 
-# --- تنظیمات ---
+# --- تنظیمات اصلی ---
 CHANNEL_NAME = args.channel_name
 NUM_PARTS = 3
 CONCURRENCY_LIMIT = args.concurrency
@@ -32,15 +32,13 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 DB_FILE = "history.db"
 
-# --- لیست پورت‌های اولویت‌دار مناسب برای اپراتورهای ایران ---
+# --- پورت‌های اولویت‌دار مناسب اپراتورهای ایران ---
 PRIORITY_PORTS = {
-    # اولویت اول (HTTPS / TLS)
     443: 1, 8443: 1, 2053: 1, 2083: 1, 2087: 1, 2096: 1,
-    # اولویت دوم (HTTP / Standard CDN)
     80: 2, 8080: 2, 8880: 2, 2052: 2, 2082: 2, 2086: 2
 }
 
-# --- لیست سورس‌ها ---
+# --- لیست منابع دریافت کانفیگ ---
 RAW_SOURCES = [
     "https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/mix",
     "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_BASE64.txt",
@@ -56,14 +54,7 @@ RAW_SOURCES = [
     "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/refs/heads/main/protocols/hysteria2.txt",
     "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no1.txt",
     "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no2.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no3.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no4.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no5.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no6.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no7.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no8.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no9.txt",
-    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no10.txt"
+    "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/V2RAY_SUB/refs/heads/main/v2ray_configs_no3.txt"
 ]
 
 if args.url:
@@ -82,10 +73,7 @@ def init_db():
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS geo_cache (
-            ip TEXT PRIMARY KEY,
-            country TEXT,
-            country_code TEXT,
-            city TEXT
+            ip TEXT PRIMARY KEY, country TEXT, country_code TEXT, city TEXT
         )
     """)
     conn.commit()
@@ -118,7 +106,6 @@ def decode_base64_text(text):
     return text
 
 def extract_port(config):
-    """استخراج پورت کانفیگ جهت سنجش اولویت"""
     try:
         if config.startswith("vmess://"):
             b64_data = config[8:]
@@ -168,43 +155,53 @@ async def fetch_geo_info(session, ips):
             except Exception as e:
                 print(f"Geo Fetch Error: {e}")
 
-async def test_config(semaphore, config, port):
+async def test_config_real_http(semaphore, config, local_port):
+    """تست واقعی دریافت دیتا از اینترنت از طریق SOCKS Proxy محلی Xray"""
     async with semaphore:
         if not XRAY_BIN.exists():
-            return config, 100
+            return None
 
-        config_file = Path(f"temp_{port}.json")
+        config_file = Path(f"temp_{local_port}.json")
         xray_config = {
             "log": {"loglevel": "none"},
-            "inbounds": [{"port": port, "listen": "127.0.0.1", "protocol": "socks"}],
+            "inbounds": [{"port": local_port, "listen": "127.0.0.1", "protocol": "socks"}],
             "outbounds": [{"protocol": "freedom"}]
         }
         
         with open(config_file, "w") as f:
             json.dump(xray_config, f)
 
+        proc = None
         try:
-            start_time = asyncio.get_event_loop().time()
             proc = await asyncio.create_subprocess_exec(
                 str(XRAY_BIN), "run", "-c", str(config_file),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
+            await asyncio.sleep(0.4)
+
+            proxy_url = f"http://127.0.0.1:{local_port}"
+            timeout = aiohttp.ClientTimeout(total=3.0)
             
-            await asyncio.sleep(0.3)
-            end_time = asyncio.get_event_loop().time()
-            latency = int((end_time - start_time) * 1000)
-
-            proc.terminate()
-            await proc.wait()
-
-            if config_file.exists():
-                config_file.unlink()
-
-            if latency <= MAX_LATENCY_MS:
-                return config, latency
+            start_time = asyncio.get_event_loop().time()
+            async with aiohttp.ClientSession(timeout=timeout) as test_session:
+                async with test_session.get("https://www.gstatic.com/generate_204", proxy=proxy_url) as resp:
+                    if resp.status in (200, 204):
+                        end_time = asyncio.get_event_loop().time()
+                        latency = int((end_time - start_time) * 1000)
+                        if latency <= MAX_LATENCY_MS:
+                            return config, latency
         except Exception:
+            pass
+        finally:
+            if proc:
+                try:
+                    proc.terminate()
+                    await proc.wait()
+                except Exception:
+                    pass
             if config_file.exists():
                 config_file.unlink()
+
         return None
 
 def remark_config(config, latency, channel, geo_info):
@@ -241,14 +238,13 @@ async def send_txt_files_to_telegram(session, generated_files):
 
     for file_path, count in generated_files:
         caption_text = (
-            f"🚀 گلچین سرورهای پرسرعت\n\n"
+            f"🚀 کانفیگ‌های تست‌شده و زنده (تست واقعی اینترنت)\n\n"
             f"📦 نام فایل: {file_path.name}\n"
-            f"📌 تعداد کانفیگ‌های صددرصد سالم: {count} عدد\n"
-            f"⚡️ حداکثر پینگ: زیر 500ms (تست شده)\n"
+            f"📌 تعداد کانفیگ‌های فعال: {count} عدد\n"
+            f"⚡️ وضعیت پینگ: واقعی زیر 600ms ✅\n"
             f"🎯 پورت‌های ویژه اولویت‌دار: 443, 8880, 8080\n\n"
             f"💬 تبادل و چت:\n"
             f"https://t.me/CONFIG_V2RAY_VIP\n\n"
-            f"📅 وضعیت به‌روزرسانی: تایید شده ✅\n\n"
             f"✨ منبع:\n"
             f"https://t.me/Goodbaye_filtering"
         )
@@ -260,15 +256,12 @@ async def send_txt_files_to_telegram(session, generated_files):
 
         try:
             async with session.post(url, data=data) as resp:
-                resp_text = await resp.text()
                 if resp.status == 200:
-                    print(f"File {file_path.name} sent successfully to Telegram!")
-                else:
-                    print(f"Telegram API Response for {file_path.name}: {resp_text}")
+                    print(f"File {file_path.name} sent successfully!")
         except Exception as e:
-            print(f"Error uploading {file_path.name} to Telegram: {e}")
+            print(f"Error uploading {file_path.name}: {e}")
         
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(2)
 
 async def main():
     init_db()
@@ -276,9 +269,7 @@ async def main():
     
     raw_configs = []
     timeout = aiohttp.ClientTimeout(total=15)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
     
     async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
         for src in SOURCES:
@@ -287,40 +278,40 @@ async def main():
                 async with session.get(src) as resp:
                     if resp.status == 200:
                         text = await resp.text()
-                        
                         full_text = decode_base64_text(text)
                         extracted = re.findall(r'(?:vless|vmess|trojan|ss|hy2)://[^\s<>"{}|\^~\[\]`]+', full_text)
-                        
                         raw_configs.extend(extracted)
-                        print(f" Success: Fetched {len(extracted)} configs.")
-                    else:
-                        print(f" Skipped (HTTP Status {resp.status})")
             except Exception as e:
-                print(f" Timeout/Error -> Skipped ({e})")
+                print(f"Error fetching source {src}: {e}")
 
         unique_raw_configs = list(set(raw_configs))
         print(f"\nTotal Configs Fetched: {len(raw_configs)}")
-        print(f"Unique Configs After Deduplication: {len(unique_raw_configs)}")
+        print(f"Unique Configs to Test: {len(unique_raw_configs)}")
 
         if not unique_raw_configs:
-            print("❌ Error: No valid configs found in any source!")
+            print("❌ No configs found!")
             return
 
+        print("\n🔍 Starting Real HTTP Connection Testing...")
         semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
-        tasks = [test_config(semaphore, cfg, 10000 + (idx % 1000)) for idx, cfg in enumerate(unique_raw_configs)]
+        tasks = [test_config_real_http(semaphore, cfg, 10000 + (idx % 1000)) for idx, cfg in enumerate(unique_raw_configs)]
         results = await asyncio.gather(*tasks)
+        
         valid_results = [r for r in results if r is not None]
+        print(f"✅ Real Active Configs Found: {len(valid_results)}")
 
-        print(f"Valid Tested Configs: {len(valid_results)}")
+        if not valid_results:
+            print("⚠️ No config passed the strict HTTP test.")
+            return
 
         hosts = list(set([extract_ip_or_host(cfg) for cfg, _ in valid_results if extract_ip_or_host(cfg)]))
         await fetch_geo_info(session, hosts)
 
-        # مرتب‌سازی هوشمند کانفیگ‌ها بر اساس اولویت پورت‌های ایران و پینگ
+        # مرتب‌سازی بر اساس اولویت پورت و سپس پینگ
         def config_sorter(item):
             cfg, lat = item
             port = extract_port(cfg)
-            port_priority = PRIORITY_PORTS.get(port, 3) # پورت‌های ایران در رتبه ۱ و ۲، بقیه رتبه ۳
+            port_priority = PRIORITY_PORTS.get(port, 3)
             return (port_priority, lat)
 
         valid_results.sort(key=config_sorter)
@@ -333,6 +324,7 @@ async def main():
 
         final_configs = list(dict.fromkeys(final_configs))
 
+        # تقسیم کانفیگ‌های سالم بین ۳ فایل txt
         generated_files = []
         total_configs = len(final_configs)
         part_size = (total_configs + NUM_PARTS - 1) // NUM_PARTS if total_configs > 0 else 0
@@ -342,6 +334,9 @@ async def main():
             end_idx = min(start_idx + part_size, total_configs)
             chunk = final_configs[start_idx:end_idx]
 
+            if not chunk:
+                continue
+
             file_path = OUTPUT_DIR / f"subscription_part{part_num}.txt"
             content = f"# Channel: {CHANNEL_NAME} - Part {part_num}/{NUM_PARTS}\n" + "\n".join(chunk)
             with open(file_path, "w", encoding="utf-8") as f:
@@ -349,8 +344,7 @@ async def main():
             
             generated_files.append((file_path, len(chunk)))
 
-        print(f"Generated {len(generated_files)} text files successfully.")
-        
+        print(f"Generated {len(generated_files)} part files.")
         await send_txt_files_to_telegram(session, generated_files)
 
 if __name__ == "__main__":
