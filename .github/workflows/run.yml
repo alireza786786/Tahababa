@@ -2,36 +2,9 @@ name: Process large config lists and send to Telegram (v2)
 
 on:
   schedule:
-    # اجرای خودکار هر ۱۵ دقیقه
     - cron: '*/15 * * * *'
   workflow_dispatch:
-    inputs:
-      url:
-        description: 'Raw URL to fetch configs'
-        required: true
-        default: 'https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/refs/heads/main/vless_configs.txt'
-      channel_name:
-        description: 'Telegram channel name'
-        required: true
-        default: '@Goodbaye_filtering'
-      split_size:
-        description: 'Max configs per output file'
-        required: false
-        default: '300'
-      concurrency:
-        description: 'Parallel TCP checks'
-        required: false
-        default: '20' # کاهش همزمانی از ۱۰۰ به ۲۰ جهت جلوگیری از بن شدن
-      max_latency_ms:
-        description: 'Latency threshold (ms)'
-        required: false
-        default: '250'
-      zip:
-        description: 'Create zip?'
-        required: false
-        default: 'true'
 
-# ۱. جلوگیری از اجرای همزمان چند ورک‌فلو
 concurrency:
   group: xray-processor-group
   cancel-in-progress: true
@@ -39,7 +12,9 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # کاهش سقف زمان اجرا از ۱۸۰ به ۱۵ دقیقه
+    permissions:
+      contents: write
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -50,7 +25,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      # ۲. کش کردن باینری Xray بین اجراها
       - name: Cache Xray Binary
         id: cache-xray
         uses: actions/cache@v4
@@ -58,12 +32,10 @@ jobs:
           path: ./.xray_bin
           key: ${{ runner.os }}-xray-bin-v1
 
-      # ۳. دانلود باینری فقط در صورت عدم وجود در کش
       - name: Download Xray Binary
         if: steps.cache-xray.outputs.cache-hit != 'true'
         run: |
           mkdir -p ./.xray_bin
-          echo "Downloading Xray binary..."
           curl -L -o ./.xray_bin/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
           unzip -o ./.xray_bin/xray.zip -d ./.xray_bin/
           chmod +x ./.xray_bin/xray
@@ -78,28 +50,20 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # مقادیر پیش‌فرض برای اجرای خودکار (cron) یا دستی (workflow_dispatch)
-          URL="${{ github.event.inputs.url || 'https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/refs/heads/main/vless_configs.txt' }}"
-          CHANNEL="${{ github.event.inputs.channel_name || '@Goodbaye_filtering' }}"
-          SPLIT="${{ github.event.inputs.split_size || '300' }}"
-          CONC="${{ github.event.inputs.concurrency || '20' }}"
-          LATENCY="${{ github.event.inputs.max_latency_ms || '250' }}"
-          IS_ZIP="${{ github.event.inputs.zip || 'true' }}"
-
-          zip_flag=""
-          if [ "$IS_ZIP" = "true" ]; then zip_flag="--zip"; fi
-
           python process_configs_v2.py \
-            --url "$URL" \
-            --channel-name "$CHANNEL" \
-            --split-size "$SPLIT" \
-            --concurrency "$CONC" \
-            --max-latency-ms "$LATENCY" \
-            ${zip_flag} --output-dir outputs
+            --url "https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/refs/heads/main/vless_configs.txt" \
+            --channel-name "@Goodbaye_filtering" \
+            --concurrency 20 \
+            --max-latency-ms 250 \
+            --zip --output-dir outputs
 
-      - name: Upload zip as artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: processed-configs-zip
-          path: outputs/
+      # آپلود و ثبت تغییرات فایل‌های سابسکرایب روی ریپازیتوری
+      - name: Commit & Push updated subscriptions
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          mkdir -p subs
+          cp outputs/subscription_part*.txt subs/
+          git add subs/
+          git commit -m "Auto-update subscription links [skip ci]" || exit 0
+          git push
