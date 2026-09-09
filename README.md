@@ -8,7 +8,7 @@
     <a href="https://github.com/ebrasha/free-v2ray-public-list"><strong>مشاهده منبع کانفیگ‌ها »</strong></a>
     <br />
     <br />
-    <img src="https://img.shields.io/github/actions/workflow/status/YOUR_USERNAME/YOUR_REPO/run.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=Workflow%20Status" alt="Workflow Status" />
+    <img src="https://img.shields.io/github/actions/workflow/status/alireza786786/Tahababa/run.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=Workflow%20Status" alt="Workflow Status" />
     <img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11" />
     <img src="https://img.shields.io/badge/Xray--Core-Latest-blue?style=for-the-badge&logo=v2ray&logoColor=white" alt="Xray Core" />
     <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License" />
@@ -20,20 +20,31 @@
 
 ## 📌 معرفی پروژه
 
-این پروژه یک راه‌کار خودکار و قدرتمند مبتنی بر **GitHub Actions** و **Python AsyncIO** است که به‌صورت دوره‌ای (هر ۱۵ دقیقه) کانفیگ‌های V2Ray (VLESS, VMess, Trojan, ShadowSocks) را جمع‌آوری کرده، آن‌ها را با استفاده از هسته واقعی **Xray-Core** ارزیابی می‌کند و خروجی‌های سالم و مرتب‌شده را به کانال تلگرام ارسال می‌نماید.
+این پروژه یک راه‌کار خودکار و قدرتمند مبتنی بر **GitHub Actions** و **Python AsyncIO** است که به‌صورت دوره‌ای (هر ۱۵ دقیقه) کانفیگ‌های V2Ray را جمع‌آوری کرده، آن‌ها را با استفاده از هسته واقعی **Xray-Core** ارزیابی می‌کند و خروجی‌های سالم را در ۳ لینک سابسکرایب مجزا قرار داده و نسخه زیپ آن را به تلگرام ارسال می‌نماید.
+
+---
+
+## 📡 لینک‌های سابسکرایب مستقیم (Subscription Links)
+
+شما می‌توانید لینک‌های زیر را مستقیماً کپی کرده و وارد نرم‌افزارهای خود (v2rayNG, Streisand, Shadowrocket, NekoBox و...) کنید. این لینک‌ها هر **۱۵ دقیقه** به‌صورت خودکار آپدیت می‌شوند:
+
+| بخش | سهم کانفیگ‌ها | لینک سابسکرایب (جهت کپی در برنامه) |
+| :---: | :---: | :--- |
+| 🚀 **پارت اول** | ۳۳٪ کل | `https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/subscription_part1.txt` |
+| ⚡ **پارت دوم** | ۳۳٪ کل | `https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/subscription_part2.txt` |
+| 🔥 **پارت سوم** | ۳۴٪ کل | `https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/subscription_part3.txt` |
 
 ---
 
 ## ✨ قابلیت‌های کلیدی
 
-- 🚀 **تست سلامت واقعی با Xray Core:** برخلاف تست‌های معمولی TCP، تست اتصال و صحت عملکرد به‌وسیله خود موتور Xray سنجیده می‌شود.
+- 🚀 **تست سلامت واقعی با Xray Core:** ارزیابی واقعی اتصال به‌وسیله موتور Xray به‌جای پینگ ساده TCP.
 - ⚡ **سرعت بالا (Async/Parallel):** پردازش همزمان ده‌ها کانفیگ با استفاده از `asyncio` و `aiohttp`.
-- 📍 **شناسایی موقعیت جغرافیایی (GeoIP):** استخراج کشور، پرچم کشور و شهر سرورها با سیستم کش‌سازی هوشمند جهت جلوگیری از بن شدن IP.
-- 🏷 **برچسب‌گذاری و تغییر برند (Remarking):** جایگزینی خودکار نام کانال و افزودن متاداده‌ها به نام کانفیگ با فرمت:
-  `👉🆔@Channel📡🚩®️Country©️City🅿️ping:XXms`
-- 💾 **سیستم کش باینری (Xray Cache):** ذخیره‌سازی هسته Xray بین اجراهای GitHub Actions برای افزایش چشمگیر سرعت اجرا.
-- 🛡 **کنترل همزمانی (Concurrency Control):** جلوگیری از تداخل اجراها و مصرف بی‌رویه منابع گیت‌هاب.
-- 📦 **تقسیم‌بندی و فشرده‌سازی:** تقسیم فایل‌های خروجی به پارت‌های سفارشی و بسته‌بندی زیپ جهت ارسال مستقیم به تلگرام.
+- 📍 **شناسایی موقعیت جغرافیایی (GeoIP):** استخراج کشور، پرچم کشور و شهر سرورها با سیستم کش‌سازی هوشمند.
+- 🏷 **برچسب‌گذاری و تغییر برند (Remarking):** جایگزینی خودکار نام کانال و افزودن متاداده‌ها با فرمت:
+  `👉🆔@Goodbaye_filtering📡🚩®️Country©️City🅿️ping:XXms`
+- 📊 **تقسیم متوازن به ۳ لینک:** توزیع دقیق کانفیگ‌های سالم بین ۳ فایل سابسکرایب مجزا.
+- 📦 **فشرده‌سازی و ارسال به تلگرام:** بسته‌بندی فایل‌ها به صورت ZIP و ارسال مستقیم به کانال/چت تلگرام.
 
 ---
 
@@ -52,7 +63,8 @@
 [ Batch GeoIP & Cache ]  ──► (SQLite Database)
            │
            ▼
-[ Remark & Split Files ]
+[ Remark & Split into 3 Parts ]
            │
-           ▼
-[ Zip Archive & Telegram Bot Upload ]
+           ├──────────────────────────────┐
+           ▼                              ▼
+[ Update Subscription Links ]    [ Send ZIP to Telegram ]
