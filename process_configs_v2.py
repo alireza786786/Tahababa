@@ -29,9 +29,9 @@ MAX_LATENCY_MS = args.max_latency_ms
 OUTPUT_DIR = Path(args.output_dir)
 XRAY_BIN = Path("./.xray_bin/xray")
 
-# تنظیمات تلگرام (از متغیر محیطی یا مقادیر پیش‌فرض)
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7120221440:AAEC2UVLZc8vIugRjmESTZlqSeSZL_Wue2Y")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "-1002128220461")
+# دریافت ایمن از متغیرهای محیطی
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 DB_FILE = "history.db"
 
 def country_code_to_flag(code):
@@ -146,6 +146,10 @@ def remark_config(config, latency, channel, geo_info):
         return f"{config}#{encoded_remark}"
 
 async def send_zip_to_telegram(session, zip_path, total_count):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram secrets not found. Skipping Telegram upload.")
+        return
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
     
     caption_text = (
@@ -166,7 +170,7 @@ async def send_zip_to_telegram(session, zip_path, total_count):
             if resp.status == 200:
                 print("ZIP file sent to Telegram successfully!")
             else:
-                print(f"Failed to send to Telegram. Response: {resp_text}")
+                print(f"Telegram API Response: {resp_text}")
     except Exception as e:
         print(f"Error uploading to Telegram: {e}")
 
