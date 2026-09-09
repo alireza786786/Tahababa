@@ -1,0 +1,6 @@
+.xray_bin/
+history.db
+temp_*.json
+outputs/
+__pycache__/
+*.pyc
