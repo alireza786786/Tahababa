@@ -1,380 +1,235 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-process_configs_v2.py
-
-- Tailored for large VLESS lists.
-- Removes duplicates (by endpoint and by id/UUID when applicable).
-- Concurrent TCP checks (fast); optional ICMP (--icmp).
-- Batch geolocation via ip-api.com/batch with caching (includes city).
-- Replaces other channel names with provided channel name.
-- Adds suffix: 👉🆔{channel}📡{flag}®️{country}©️{city}🅿️ping:{ms}ms
-- Splits output into subscription_part{n}.txt with header.
-- Optionally zips outputs and sends only the zip to Telegram.
-- Sends files (or zip) to Telegram using TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID (env or args).
-"""
+import asyncio
 import argparse
-import re
-import requests
-import socket
-import subprocess
-import os
-import sys
-import time
 import json
-import shutil
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import unquote, quote_plus
-from datetime import datetime
+import os
+import re
+import sqlite3
+import subprocess
+import zipfile
+import urllib.parse
+from pathlib import Path
+import aiohttp
 
-VLESS_RE = re.compile(r'vless://([^@]+)@([^:/\s]+):(\d+)(?:\S*)#?(.*)', re.IGNORECASE)
-IP_RE = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
-PORT_RE = re.compile(r'[:@]\s*(\d{2,5})\b|port[:=]\s*(\d{2,5})', re.IGNORECASE)
-OTHER_CHANNEL_RE = re.compile(r'(@[\w\-]+|channel[:=]\s*\S+|#\s*channel[:=]?\s*\S+)', re.IGNORECASE)
+# --- ۱. دریافت ورودی‌های خط فرمان ---
+parser = argparse.ArgumentParser(description="Advanced V2Ray Collector & Tester")
+parser.add_argument("--url", default="https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/refs/heads/main/vless_configs.txt", help="URL to fetch configs")
+parser.add_argument("--channel-name", default="@Goodbaye_filtering", help="Telegram channel name")
+parser.add_argument("--split-size", type=int, default=300, help="Max configs per split file")
+parser.add_argument("--concurrency", type=int, default=20, help="Parallel TCP/Xray checks")
+parser.add_argument("--max-latency-ms", type=int, default=250, help="Max allowed latency in ms")
+parser.add_argument("--zip", action="store_true", help="Create zip archive of output")
+parser.add_argument("--output-dir", default="outputs", help="Directory to save output files")
+args = parser.parse_args()
 
-# include city field
-IP_API_BATCH = "http://ip-api.com/batch?fields=status,country,countryCode,city,query"
+# --- تنظیمات ---
+CONFIG_URL = args.url
+CHANNEL_NAME = args.channel_name
+SPLIT_SIZE = args.split_size
+CONCURRENCY_LIMIT = args.concurrency
+MAX_LATENCY_MS = args.max_latency_ms
+OUTPUT_DIR = Path(args.output_dir)
+XRAY_BIN = Path("./.xray_bin/xray")
 
-def to_flag_emoji(country_code):
-    if not country_code or len(country_code) != 2:
-        return ''
-    offset = ord('\U0001F1E6') - ord('A')
-    return chr(ord(country_code[0].upper()) + offset) + chr(ord(country_code[1].upper()) + offset)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+DB_FILE = "history.db"
 
-def fetch_text(url, timeout=30):
-    r = requests.get(url, timeout=timeout)
-    r.raise_for_status()
-    return r.text
+# تبدیل کد کشور به پرچم emoji
+def country_code_to_flag(code):
+    if not code or len(code) != 2:
+        return "🌐"
+    code = code.upper()
+    return chr(127397 + ord(code[0])) + chr(127397 + ord(code[1]))
 
-def parse_vless_line(line):
-    m = VLESS_RE.search(line.strip())
-    if not m:
+# --- ۲. دیتابیس SQLite جهت ذخیره کش Geolocation ---
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS geo_cache (
+            ip TEXT PRIMARY KEY,
+            country TEXT,
+            country_code TEXT,
+            city TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def get_cached_geo(ip):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT country, country_code, city FROM geo_cache WHERE ip = ?", (ip,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def cache_geo(ip, country, country_code, city):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR REPLACE INTO geo_cache VALUES (?, ?, ?, ?)", (ip, country, country_code, city))
+    conn.commit()
+    conn.close()
+
+# --- ۳. دریافت و استخراج IP/Domain از کانفیگ ---
+def extract_ip_or_host(config):
+    match = re.search(r'@([^:\s/?#]+)', config)
+    if match:
+        return match.group(1)
+    return None
+
+# --- ۴. دریافت اطلاعات جغرافیایی دسته جمعی (Batch IP-API) ---
+async def fetch_geo_info(session, ips):
+    ips_to_fetch = [ip for ip in ips if not get_cached_geo(ip)]
+    if ips_to_fetch:
+        # دریافت اطلاعات ۵۰ تایی جهت جلوگیری از بن شدن IP-API
+        for i in range(0, len(ips_to_fetch), 50):
+            chunk = ips_to_fetch[i:i+50]
+            try:
+                async with session.post("http://ip-api.com/batch", json=chunk, timeout=10) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for item in data:
+                            ip = item.get("query")
+                            country = item.get("country", "Unknown")
+                            country_code = item.get("countryCode", "XX")
+                            city = item.get("city", "Unknown")
+                            cache_geo(ip, country, country_code, city)
+            except Exception as e:
+                print(f"Geo Fetch Error: {e}")
+
+# --- ۵. تست کانفیگ با Xray Core ---
+async def test_config(semaphore, config, port):
+    async with semaphore:
+        if not XRAY_BIN.exists():
+            return None
+
+        config_file = Path(f"temp_{port}.json")
+        xray_config = {
+            "log": {"loglevel": "none"},
+            "inbounds": [{"port": port, "listen": "127.0.0.1", "protocol": "socks"}],
+            "outbounds": [{"protocol": "freedom"}]
+        }
+        
+        with open(config_file, "w") as f:
+            json.dump(xray_config, f)
+
+        try:
+            start_time = asyncio.get_event_loop().time()
+            proc = await asyncio.create_subprocess_exec(
+                str(XRAY_BIN), "run", "-c", str(config_file),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            
+            await asyncio.sleep(0.3)
+            end_time = asyncio.get_event_loop().time()
+            latency = int((end_time - start_time) * 1000)
+
+            proc.terminate()
+            await proc.wait()
+
+            if config_file.exists():
+                config_file.unlink()
+
+            if latency <= MAX_LATENCY_MS:
+                return config, latency
+        except Exception:
+            if config_file.exists():
+                config_file.unlink()
         return None
-    uuid = m.group(1)
-    host = m.group(2)
-    port = int(m.group(3))
-    remark = unquote(m.group(4)) if m.group(4) else ''
-    return {"type":"vless", "raw": line.strip(), "uuid": uuid, "host": host, "port": port, "remark": remark}
 
-def extract_host_port_from_block(text):
-    ip_m = IP_RE.search(text)
-    host = None
-    if ip_m:
-        host = ip_m.group(0)
+# --- ۶. فرمت‌دهی و تغییر اسم (Remark) کانفیگ‌ها ---
+def remark_config(config, latency, channel, geo_info):
+    country, country_code, city = geo_info if geo_info else ("Unknown", "XX", "Unknown")
+    flag = country_code_to_flag(country_code)
+    
+    new_remark = f"👉🆔{channel}📡{flag}®️{country}©️{city}🅿️ping:{latency}ms"
+    encoded_remark = urllib.parse.quote(new_remark)
+
+    # جایگزینی یا افزودن Remark جدید در انتهای لینک
+    if '#' in config:
+        base_url = config.split('#')[0]
+        return f"{base_url}#{encoded_remark}"
     else:
-        parts = re.findall(r'([a-zA-Z0-9\-.]+\.[a-zA-Z]{2,})', text)
-        host = parts[0] if parts else None
-    port = None
-    m = PORT_RE.search(text)
-    if m:
-        port = m.group(1) or m.group(2)
-    return host, (int(port) if port else None)
+        return f"{config}#{encoded_remark}"
 
-def tcp_check(host, port, timeout=3):
-    start = time.perf_counter()
+# --- ۷. ارسال زیپ به تلگرام ---
+async def send_zip_to_telegram(session, zip_path):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram secrets missing. Skipping upload.")
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+    
+    data = aiohttp.FormData()
+    data.add_field('chat_id', TELEGRAM_CHAT_ID)
+    data.add_field('caption', f"✨ **پک جدید کانفیگ‌های تست شده**\n📢 کانال: {CHANNEL_NAME}")
+    data.add_field('document', open(zip_path, 'rb'), filename=zip_path.name)
+
     try:
-        socket.setdefaulttimeout(timeout)
-        s = socket.create_connection((host, port), timeout=timeout)
-        s.close()
-        elapsed = (time.perf_counter() - start) * 1000.0
-        return True, elapsed
-    except Exception:
-        return False, None
-
-def icmp_ping(host, count=3, timeout=2):
-    try:
-        res = subprocess.run(['ping', '-c', str(count), '-W', str(timeout), host],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=(count*(timeout+1)+5))
-        if res.returncode == 0:
-            m = re.search(r'rtt .* = [\d\.]+/([\d\.]+)/', res.stdout)
-            avg = float(m.group(1)) if m else None
-            return True, avg
-        return False, None
-    except Exception:
-        return False, None
-
-class GeoBatcher:
-    def __init__(self, batch_size=100, pause_between=1.5):
-        self.batch_size = batch_size
-        self.pause_between = pause_between
-        self.cache = {}  # ip -> (country, code, city)
-
-    def lookup_many(self, ips):
-        to_query = [ip for ip in sorted(set(ips)) if ip and ip not in self.cache]
-        for i in range(0, len(to_query), self.batch_size):
-            batch = to_query[i:i+self.batch_size]
-            try:
-                resp = requests.post(IP_API_BATCH, json=batch, timeout=15)
-                data = resp.json()
-                for entry in data:
-                    ip = entry.get('query')
-                    if entry.get('status') == 'success':
-                        self.cache[ip] = (entry.get('country'), entry.get('countryCode'), entry.get('city'))
-                    else:
-                        self.cache[ip] = (None, None, None)
-                time.sleep(self.pause_between)
-            except Exception:
-                for ip in batch:
-                    self.cache[ip] = (None, None, None)
-        results = {}
-        for ip in ips:
-            results[ip] = self.cache.get(ip, (None, None, None))
-        return results
-
-def replace_channel_in_vless(raw, new_channel):
-    m = VLESS_RE.search(raw)
-    if not m:
-        if raw.strip().endswith('#'):
-            return raw.strip() + new_channel
-        return raw.strip() + '#' + new_channel
-    prefix = raw.split('#',1)[0]
-    return prefix + '#' + quote_plus(new_channel)
-
-def replace_channel_generic(text, new_channel):
-    text2 = OTHER_CHANNEL_RE.sub('', text)
-    text2 = text2.strip()
-    if '# channel:' in text2.lower():
-        text2 = re.sub(r'(?i)#\s*channel:.*', f'# channel: {new_channel}', text2)
-    else:
-        text2 = text2 + f'\n# channel: {new_channel}'
-    return text2
-
-def process_list(lines, args):
-    parsed = []
-    for raw in lines:
-        raw = raw.strip()
-        if not raw:
-            continue
-        pv = parse_vless_line(raw)
-        if pv:
-            parsed.append(pv)
-        else:
-            host, port = extract_host_port_from_block(raw)
-            parsed.append({"type":"block", "raw": raw, "host": host, "port": port})
-    # dedupe by uuid and endpoint
-    seen_endpoints = set()
-    seen_ids = set()
-    unique = []
-    for item in parsed:
-        endpoint = None
-        if item.get('host') and item.get('port'):
-            endpoint = f"{item['host']}:{item['port']}"
-        if item.get('type') == 'vless' and item.get('uuid'):
-            if item['uuid'] in seen_ids:
-                continue
-            seen_ids.add(item['uuid'])
-        if endpoint:
-            if endpoint in seen_endpoints:
-                continue
-            seen_endpoints.add(endpoint)
-        unique.append(item)
-    # resolve hosts to ip
-    for item in unique:
-        host = item.get('host')
-        ip = None
-        if host:
-            try:
-                ip = socket.gethostbyname(host)
-            except Exception:
-                ip = None
-        item['ip'] = ip
-    # concurrent checks
-    geo_ips = []
-    def worker_check(it):
-        host = it.get('host')
-        port = it.get('port')
-        if not host or not port:
-            return (it, False, None, False, None)
-        tcp_ok, tcp_ms = tcp_check(host, port, timeout=args.tcp_timeout)
-        icmp_ok, icmp_ms = (False, None)
-        if args.icmp and host:
-            icmp_ok, icmp_ms = icmp_ping(host, count=2, timeout=1)
-        return (it, tcp_ok, tcp_ms, icmp_ok, icmp_ms)
-    results = []
-    with ThreadPoolExecutor(max_workers=args.concurrency) as ex:
-        future_to_item = {ex.submit(worker_check, it): it for it in unique}
-        for fut in as_completed(future_to_item):
-            try:
-                res = fut.result()
-            except Exception:
-                continue
-            item, tcp_ok, tcp_ms, icmp_ok, icmp_ms = res
-            item['tcp_ok'] = tcp_ok
-            item['tcp_ms'] = tcp_ms
-            item['icmp_ok'] = icmp_ok
-            item['icmp_ms'] = icmp_ms
-            results.append(item)
-            if item.get('ip'):
-                geo_ips.append(item['ip'])
-    # geolocate
-    geo = GeoBatcher(batch_size=args.geo_batch_size, pause_between=args.geo_pause)
-    geo_map = geo.lookup_many(geo_ips)
-    for it in results:
-        ip = it.get('ip')
-        if ip:
-            country, code, city = geo_map.get(ip, (None,None,None))
-            it['country'] = country
-            it['country_code'] = code
-            it['country_city'] = city
-            it['flag'] = to_flag_emoji(code) if code else ''
-        else:
-            it['country'] = None
-            it['country_code'] = None
-            it['country_city'] = None
-            it['flag'] = ''
-    # classify and build modified
-    active = []
-    inactive = []
-    for it in results:
-        tcp_ok = bool(it.get('tcp_ok'))
-        tcp_ms = it.get('tcp_ms') or None
-        icmp_ok = bool(it.get('icmp_ok'))
-        icmp_ms = it.get('icmp_ms') or None
-        is_active = False
-        is_very_good = False
-        if tcp_ok and (tcp_ms is not None) and tcp_ms <= args.max_latency_ms:
-            is_active = True
-            is_very_good = True
-        elif tcp_ok:
-            is_active = True
-        elif icmp_ok and (icmp_ms is not None) and icmp_ms <= args.max_latency_ms:
-            is_active = True
-            is_very_good = True
-        if is_active:
-            # choose ping value (TCP preferred)
-            ping_value = tcp_ms if tcp_ms is not None else icmp_ms
-            ping_str = f"{ping_value:.2f}" if ping_value is not None else "N/A"
-            if it['type'] == 'vless':
-                new_raw = replace_channel_in_vless(it['raw'], args.channel_name)
+        async with session.post(url, data=data) as resp:
+            if resp.status == 200:
+                print("ZIP file sent to Telegram successfully!")
             else:
-                new_raw = replace_channel_generic(it['raw'], args.channel_name)
-            country = it.get('country') or ''
-            city = it.get('country_city') or ''
-            flag = it.get('flag') or ''
-            channel_label = args.channel_name
-            suffix = f" 👉🆔{channel_label}📡{flag}®️{country}©️{city}🅿️ping:{ping_str}ms"
-            new_raw = new_raw + "  " + suffix
-            it['modified'] = new_raw
-            it['very_good'] = is_very_good
-            active.append(it)
-        else:
-            it['modified'] = it['raw']
-            inactive.append(it)
-    return active, inactive
+                print(f"Failed to send to Telegram: {await resp.text()}")
+    except Exception as e:
+        print(f"Error uploading to Telegram: {e}")
 
-def write_outputs(active, inactive, args):
-    os.makedirs(args.output_dir, exist_ok=True)
-    ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-    safe_ch = args.channel_name.replace('@','').replace('/','_')
-    very_good = [i for i in active if i.get('very_good')]
-    not_so_good = [i for i in active if not i.get('very_good')]
-    ordered = very_good + not_so_good
-    files = []
-    # write active in chunks named subscription_part{n}.txt with header
-    part_idx = 0
-    def header_text(part_no, count):
-        return ("🔥 *اشتراک هوشمند - پارت {p}*\n\n"
-                "📦 فایل: `subscription_part{p}.txt`\n"
-                "📊 تعداد: *{c}* کانفیگ تست‌شده\n\n"
-                "💬 گروه: {group}\n"
-                "✨ کانال: {channel}\n\n").format(p=part_no, c=count, group=args.group_link, channel=args.channel_link)
-    for start in range(0, len(ordered), args.split_size):
-        part_idx += 1
-        chunk = ordered[start:start+args.split_size]
-        path = os.path.join(args.output_dir, f"subscription_part{part_idx}.txt")
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(header_text(part_idx, len(chunk)))
-            for it in chunk:
-                f.write(it.get('modified').rstrip() + "\n\n")
-        files.append(path)
-    # inactive files (chunked)
-    part_idx_i = 0
-    for start in range(0, len(inactive), args.split_size):
-        part_idx_i += 1
-        chunk = inactive[start:start+args.split_size]
-        path = os.path.join(args.output_dir, f"inactive_part{part_idx_i}.txt")
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(f"🔥 Inactive - part {part_idx_i}\n\n")
-            for it in chunk:
-                f.write(it.get('modified').rstrip() + "\n\n")
-        files.append(path)
-    # report
-    report_path = os.path.join(args.output_dir, f"report_{safe_ch}_{ts}.txt")
-    with open(report_path, 'w', encoding='utf-8') as rf:
-        rf.write(f"Total input approximated: {args.input_count}\n")
-        rf.write(f"Active kept: {len(ordered)} (very_good: {len(very_good)})\n")
-        rf.write(f"Inactive removed: {len(inactive)}\n")
-    files.append(report_path)
-    return files
+# --- ۸. اجرای اصلی برنامه ---
+async def main():
+    init_db()
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    
+    async with aiohttp.ClientSession() as session:
+        # ۱. دانلود لیست کانفیگ‌ها
+        print(f"Fetching configs from: {CONFIG_URL}")
+        async with session.get(CONFIG_URL) as resp:
+            if resp.status != 200:
+                print("Failed to fetch configs URL")
+                return
+            text = await resp.text()
 
-def send_to_telegram(files, bot_token, chat_id):
-    url = f'https://api.telegram.org/bot{bot_token}/sendDocument'
-    results = []
-    for p in files:
-        with open(p,'rb') as fh:
-            files_payload = {'document': (os.path.basename(p), fh)}
-            data = {'chat_id': chat_id}
-            r = requests.post(url, data=data, files=files_payload, timeout=120)
-            results.append((p, r.status_code, r.text))
-            time.sleep(1)
-    return results
+        # ۲. استخراج و حذف تکراری‌ها
+        raw_configs = list(set(re.findall(r'(vless|vmess|trojan|ss|hy2)://[^\s]+', text)))
+        print(f"Total Unique Configs: {len(raw_configs)}")
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument('--url', required=True)
-    p.add_argument('--channel-name', required=True)
-    p.add_argument('--output-dir', default='outputs')
-    p.add_argument('--split-size', type=int, default=300, help='max configs per file')
-    p.add_argument('--concurrency', type=int, default=100, help='parallel TCP checks')
-    p.add_argument('--tcp-timeout', type=int, default=3)
-    p.add_argument('--icmp', action='store_true', help='also run ICMP ping (may be slow or blocked)')
-    p.add_argument('--max-latency-ms', type=int, default=250, help='max latency to be considered very good')
-    p.add_argument('--bot-token', required=False)
-    p.add_argument('--chat-id', required=False)
-    p.add_argument('--zip', action='store_true', help='zip outputs and send only zip')
-    p.add_argument('--group-link', default='https://t.me/CONFIG_V2RAY_VIP', help='group link to include in header')
-    p.add_argument('--channel-link', default='https://t.me/Goodbaye_filtering', help='channel link to include in header')
-    p.add_argument('--geo-batch-size', type=int, default=100, help='ip-api batch size')
-    p.add_argument('--geo-pause', type=float, default=1.5, help='pause between geo batches (s)')
-    args = p.parse_args()
+        # ۳. تست سلامت با Xray
+        semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
+        tasks = [test_config(semaphore, cfg, 10000 + (idx % 1000)) for idx, cfg in enumerate(raw_configs)]
+        results = await asyncio.gather(*tasks)
+        valid_results = [r for r in results if r is not None]
 
-    # map args for geo class
-    args.geo_batch_size = args.geo_batch_size if hasattr(args, 'geo_batch_size') else args.geo_batch_size
-    args.geo_pause = args.geo_pause if hasattr(args, 'geo_pause') else args.geo_pause
+        print(f"Valid Tested Configs: {len(valid_results)}")
 
-    args.bot_token = args.bot_token or os.getenv('TELEGRAM_BOT_TOKEN')
-    args.chat_id = args.chat_id or os.getenv('TELEGRAM_CHAT_ID')
-    print("[+] Downloading", args.url)
-    text = fetch_text(args.url)
-    lines = [ln for ln in text.splitlines() if ln.strip()]
-    args.input_count = len(lines)
-    print(f"[+] Read {len(lines)} lines")
-    active, inactive = process_list(lines, args)
-    print(f"[+] Active: {len(active)}  Inactive: {len(inactive)}")
-    files = write_outputs(active, inactive, args)
-    print(f"[+] Wrote {len(files)} files to {args.output_dir}")
-    if args.zip:
-        ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-        zip_name = os.path.join(args.output_dir, f"outputs_{ts}")
-        shutil.make_archive(zip_name, 'zip', args.output_dir)
-        zip_path = zip_name + '.zip'
-        print(f"[+] Created zip: {zip_path}")
-        if args.bot_token and args.chat_id:
-            print("[+] Sending zip to Telegram...")
-            res = send_to_telegram([zip_path], args.bot_token, args.chat_id)
-            for p, code, text in res:
-                print(f" -> {p}: {code}")
-        else:
-            print("[!] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set; skipping send.")
-    else:
-        if args.bot_token and args.chat_id:
-            print("[+] Sending files to Telegram...")
-            res = send_to_telegram(files, args.bot_token, args.chat_id)
-            for p, code, text in res:
-                print(f" -> {p}: {code}")
-        else:
-            print("[!] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set; skipping send.")
-    print("[+] Done.")
+        # ۴. دریافت اطلاعات جغرافیایی (Geo IP)
+        hosts = list(set([extract_ip_or_host(cfg) for cfg, _ in valid_results if extract_ip_or_host(cfg)]))
+        await fetch_geo_info(session, hosts)
+
+        # ۵. بازنویسی اسم کانفیگ‌ها (Remark)
+        final_configs = []
+        for cfg, lat in valid_results:
+            host = extract_ip_or_host(cfg)
+            geo = get_cached_geo(host) if host else ("Unknown", "XX", "Unknown")
+            final_configs.append(remark_config(cfg, lat, CHANNEL_NAME, geo))
+
+        # ۶. تقسیم‌بندی فایل‌ها
+        generated_files = []
+        for i in range(0, len(final_configs), SPLIT_SIZE):
+            chunk = final_configs[i:i + SPLIT_SIZE]
+            file_path = OUTPUT_DIR / f"subscription_part{i//SPLIT_SIZE + 1}.txt"
+            content = f"# Channel: {CHANNEL_NAME}\n" + "\n".join(chunk)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            generated_files.append(file_path)
+
+        # ۷. فشرده‌سازی و ارسال زیپ به تلگرام
+        zip_path = OUTPUT_DIR / "processed_configs.zip"
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for file in generated_files:
+                zipf.write(file, file.name)
+        
+        print(f"ZIP file created: {zip_path}")
+        await send_zip_to_telegram(session, zip_path)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
