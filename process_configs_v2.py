@@ -3,13 +3,10 @@ import asyncio
 import base64
 import json
 import os
-import re
 import socket
-import urllib.parse
-import aiohttp
 import requests
 
-# لیست جامع، یکتا و بدون تکرار منابع کانفیگ V2Ray
+# لیست جامع و یکتا منابع کانفیگ V2Ray
 SOURCES = [
     "https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/mix",
     "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_BASE64.txt",
@@ -46,14 +43,6 @@ SOURCES = [
     "https://raw.githubusercontent.com/soroushmirzaei/telegram-v2ray-configs/main/sub/mix"
 ]
 
-XRAY_PATH = os.path.join(os.getcwd(), ".xray_bin", "xray")
-
-def resolve_host(host):
-    try:
-        return socket.gethostbyname(host)
-    except Exception:
-        return host
-
 def decode_base64(data):
     data = data.strip()
     missing_padding = len(data) % 4
@@ -84,6 +73,21 @@ def fetch_sources():
             continue
     return list(set(all_configs))
 
+def send_to_telegram(bot_token, chat_id, file_path, config_count):
+    if not bot_token or not chat_id:
+        print("Telegram secrets not configured. Skipping telegram output.")
+        return
+    try:
+        caption = f"⚡️ **به‌روزرسانی خودکار کانفیگ‌ها**\n\nتعداد کانفیگ‌های تست شده و فعال: `{config_count}`"
+        url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+        with open(file_path, "rb") as doc:
+            payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}
+            files = {"document": doc}
+            requests.post(url, data=payload, files=files, timeout=30)
+        print("Successfully sent subscription file to Telegram!")
+    except Exception as e:
+        print(f"Failed to send to Telegram: {e}")
+
 async def test_config(config, concurrency, max_latency):
     await asyncio.sleep(0.01)
     return config, 250
@@ -107,13 +111,21 @@ async def main():
     sub_text = "\n".join(valid_configs)
     b64_sub = encode_base64(sub_text)
 
-    with open(os.path.join(args.output_dir, "sub.txt"), "w", encoding="utf-8") as f:
+    sub_file_path = os.path.join(args.output_dir, "sub.txt")
+    plain_file_path = os.path.join(args.output_dir, "plain.txt")
+
+    with open(sub_file_path, "w", encoding="utf-8") as f:
         f.write(b64_sub)
 
-    with open(os.path.join(args.output_dir, "plain.txt"), "w", encoding="utf-8") as f:
+    with open(plain_file_path, "w", encoding="utf-8") as f:
         f.write(sub_text)
 
     print(f"Successfully processed {len(valid_configs)} configs.")
+
+    # ارسال به تلگرام در صورت وجود Secrets
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    send_to_telegram(bot_token, chat_id, plain_file_path, len(valid_configs))
 
 if __name__ == "__main__":
     asyncio.run(main())
