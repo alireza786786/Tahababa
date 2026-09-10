@@ -49,7 +49,7 @@ MY_CHANNEL = "@Goodbaye_filtering"
 MY_CHAT_GROUP = "https://t.me/CONFIG_V2RAY_VIP"
 
 def decode_base64(data):
-    data = data.strip()
+    data = data.strip().replace('\n', '').replace('\r', '')
     missing_padding = len(data) % 4
     if missing_padding:
         data += '=' * (4 - missing_padding)
@@ -60,6 +60,35 @@ def decode_base64(data):
 
 def encode_base64(data):
     return base64.b64encode(data.encode('utf-8')).decode('utf-8')
+
+def parse_host_port(config_str):
+    """استخراج دقیق آدرس و پورت جهت حذف تکراری‌های واقعی"""
+    try:
+        if config_str.startswith("vmess://"):
+            body = config_str[8:]
+            decoded = decode_base64(body)
+            obj = json.loads(decoded)
+            return str(obj.get("add", "")), int(obj.get("port", 0))
+        
+        elif config_str.startswith("ss://"):
+            body = config_str[5:].split("#")[0]
+            if "@" in body:
+                hostport = body.rsplit("@", 1)[1]
+            else:
+                decoded = decode_base64(body)
+                hostport = decoded.rsplit("@", 1)[1] if "@" in decoded else ""
+            
+            if ":" in hostport:
+                h, p = hostport.rpartition(":")[0], hostport.rpartition(":")[2]
+                return h, int(p)
+                
+        else: # vless, trojan, hy2, hysteria2
+            parsed = urllib.parse.urlparse(config_str)
+            if parsed.hostname and parsed.port:
+                return parsed.hostname, int(parsed.port)
+    except Exception:
+        pass
+    return None, None
 
 def get_ip_info(host):
     try:
@@ -87,7 +116,7 @@ def format_config_remark(config_str, ping_ms):
         except Exception:
             return config_str
 
-    elif any(config_str.startswith(p) for p in ["vless://", "trojan://", "ss://", "hy2://"]):
+    elif any(config_str.startswith(p) for p in ["vless://", "trojan://", "ss://", "hy2://", "hysteria2://"]):
         try:
             parsed = urllib.parse.urlparse(config_str)
             flag, country, city = get_ip_info(parsed.hostname or "")
@@ -100,8 +129,9 @@ def format_config_remark(config_str, ping_ms):
     return config_str
 
 def fetch_and_deduplicate_sources():
+    """بخش اصلاح‌شده: حذف ۱۰۰٪ تکراری‌ها بر اساس ترکیب آی‌پی/هاست و پورت"""
     all_configs = []
-    seen = set()
+    seen_hostports = set()
     
     for url in SOURCES:
         try:
@@ -112,11 +142,19 @@ def fetch_and_deduplicate_sources():
                 lines = decoded.splitlines() if decoded else text.splitlines()
                 for line in lines:
                     line = line.strip()
-                    if line and any(line.startswith(p) for p in ["vmess://", "vless://", "trojan://", "ss://", "hy2://"]):
-                        core_config = line.split('#')[0]
-                        if core_config not in seen:
-                            seen.add(core_config)
-                            all_configs.append(line)
+                    if line and any(line.startswith(p) for p in ["vmess://", "vless://", "trojan://", "ss://", "hy2://", "hysteria2://"]):
+                        host, port = parse_host_port(line)
+                        if host and port:
+                            key = (host, port)
+                            if key not in seen_hostports:
+                                seen_hostports.add(key)
+                                all_configs.append(line)
+                        else:
+                            # در صورت عدم امکان پارس آی‌پی، بررسی بر اساس متن لینک
+                            core_config = line.split('#')[0]
+                            if core_config not in seen_hostports:
+                                seen_hostports.add(core_config)
+                                all_configs.append(line)
         except Exception:
             continue
     return all_configs
