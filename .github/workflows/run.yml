@@ -1,54 +1,38 @@
-name: Ultimate V2Ray Config Collector & Speed Tester
+name: Process V2Ray Subscriptions
 
 on:
   schedule:
-    - cron: '17 */2 * * *'
+    - cron: '0 2,17 * * *'
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  build-and-run:
+  process-configs:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.10
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install Xray Core
-        run: |
-          mkdir -p .xray_bin
-          curl -L -o .xray_bin/xray https://github.com/XTLS/Xray-core/releases/download/v1.8.23/xray-linux-64
-          chmod +x .xray_bin/xray
-
-      - name: Install Python Dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install aiohttp requests urllib3 httpx
+          pip install requests
 
-      - name: Run Ultimate V2Ray Collector
+      - name: Run V2Ray Processing Script
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python process_configs_v2.py --concurrency 15 --max-latency-ms 600 --output-dir subs
+          python process_configs_v2.py
 
       - name: Commit and Push Updated Subscriptions
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add subs/ history.db || true
-          
-          if git diff --staged --quiet; then
-            echo "No updates or new configs to commit."
-          else
-            git commit -m "⚡️ Auto-update subscriptions with custom tags"
-            git push
-          fi
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "🤖 Auto-update tested configs & subscription files"
+          file_pattern: "subs/*"
