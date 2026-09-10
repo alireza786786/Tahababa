@@ -1,34 +1,62 @@
+<div align="center">
+
 # 🚀 V2Ray Pipeline & Subscription Engine
 
-![Automated Processing](https://github.com/morteza-f-1990/v2ray-configs/actions/workflows/main.yml/badge.svg)
-![Python Version](https://img.shields.io/badge/Python-3.10-blue.svg?style=flat&logo=python)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
-![Status](https://img.shields.io/badge/Status-Active-brightgreen)
+[![Automated Processing](https://github.com/alireza786786/Tahababa/actions/workflows/main.yml/badge.svg)](https://github.com/alireza786786/Tahababa/actions)
+![Python](https://img.shields.io/badge/Python-3.10-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Active-success?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-orange?style=for-the-badge)
 
-یک سیستم قدرتمند، خودکار و صنعتی برای جمع‌آوری، تست زنده (TCP Handshake)، رتبه‌بندی هوشمند بر اساس پورت‌های طلایی و انتشار کانفیگ‌های پاک‌سازی‌شده V2Ray در تلگرام و لینک‌های سابسکریپشن.
-
----
-
-## ✨ ویژگی‌های برجسته مهندسی
-
-* ⚡ **حذف تکراری‌های واقعی (Host:Port Deduplication):** شناسایی و حذف کانفیگ‌های تکراری با الگوریتم استخراج آی‌پی/هاست و پورت.
-* 🛡️ **تست زنده شبکه (Active TCP Ping):** بررسی هم‌زمان اتصالات و حذف خودکار سرورهای قطع یا فیلترشده.
-* 🎯 **رتبه‌بندی هوشمند پورت‌های طلایی:** اولویت‌دهی ویژه به پورت‌های `443`, `8080`, `8880` و پروتکل‌های `REALITY` و `Hysteria2`.
-* 🌍 **کش موقعیت جغرافیایی (Geo IP Caching):** بهینه‌سازی سرعت اجرای اکشن با ذخیره موقت لوکیشن سرورها.
-* 🤖 **زمان‌بندی اتوماتیک (Cron Trigger):** اجرای خودکار سیستم ۲ بار در روز در ساعت‌های `02:00` و `17:00` UTC.
+<p align="center">
+  <b>سیستم هوشمند، خودکار و صنعتی برای جمع‌آوری، تست زنده (TCP Ping)، رتبه‌بندی پورت‌های طلایی و توزیع کانفیگ‌های پاک‌سازی‌شده V2Ray</b>
+</p>
 
 ---
 
-## 📡 لینک‌های سابسکریپشن (Subscription Links)
+</div>
 
-جهت استفاده در نرم‌افزارهای **v2rayNG**, **Sing-box**, **Streisand** یا **NekoBox**:
+<div dir="rtl">
 
-* 🔗 **لینک سابسکریپشن مستقیم (Base64):**
-  ```text
-  [https://raw.githubusercontent.com/morteza-f-1990/v2ray-configs/main/subs/sub.txt](https://raw.githubusercontent.com/morteza-f-1990/v2ray-configs/main/subs/sub.txt)
-  [https://raw.githubusercontent.com/morteza-f-1990/v2ray-configs/main/subs/plain.txt](https://raw.githubusercontent.com/morteza-f-1990/v2ray-configs/main/subs/plain.txt)
-  💬
-  💬 کانال‌ها و گروه‌های ارتباطی
-📢 کانال تلگرام: @Goodbaye_filtering
+### 🌟 ویژگی‌های برجسته مهندسی
 
-👥 گروه تبادل و چت: CONFIG_V2RAY_VIP
+* ⚡ **حذف ۱۰۰٪ تکراری‌ها (Host:Port Deduplication):** پاک‌سازی واقعی بر اساس آی‌پی و پورت
+* 🛡️ **تست زنده شبکه (Active TCP Ping):** حذف خودکار کانفیگ‌های قطع یا فیلترشده
+* 🎯 **رتبه‌بندی پورت‌های طلایی:** اولویت‌دهی ویژه به پورت‌های `443`, `8080`, `8880` و پروتکل‌های `REALITY` و `Hysteria2`
+* 🌍 **کش موقعیت جغرافیایی:** افزایش سرعت اجرای اکشن جهت جلوگیری از محدودیت
+* 🤖 **زمان‌بندی اتوماتیک:** بروزرسانی خودکار سیستم ۲ بار در روز
+
+---
+
+### 📡 لینک‌های سابسکریپشن آنلاین (Subscription Links)
+
+جهت اتصال سریع و مستقیم در نرم‌افزارهای **v2rayNG**, **Sing-box**, **Streisand** یا **NekoBox**:
+
+> 🔗 **لینک سابسکریپشن مستقم (Base64):**
+> ```text
+> [https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/sub.txt](https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/sub.txt)
+> ```
+
+> 📄 **لینک متنی (Plain Text):**
+> ```text
+> [https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/plain.txt](https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/plain.txt)
+> ```
+
+---
+
+### 💬 کانال‌ها و گروه‌های ارتباطی
+
+<div align="center">
+
+| 📢 کانال اطلاع‌رسانی | 👥 گروه چت و تبادل |
+| :---: | :---: |
+| [@Goodbaye_filtering](https://t.me/Goodbaye_filtering) | [CONFIG_V2RAY_VIP](https://t.me/CONFIG_V2RAY_VIP) |
+
+</div>
+
+</div>
+
+<br />
+
+<div align="center">
+  <sub>Designed with ❤️ for High Performance & Maximum Reliability</sub>
+</div>
