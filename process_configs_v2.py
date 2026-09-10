@@ -79,7 +79,8 @@ def parse_host_port(config_str):
                 hostport = decoded.rsplit("@", 1)[1] if "@" in decoded else ""
             
             if ":" in hostport:
-                h, p = hostport.rpartition(":")[0], hostport.rpartition(":")[2]
+                h = hostport.rpartition(":")[0]
+                p = hostport.rpartition(":")[2]
                 return h, int(p)
                 
         else: # vless, trojan, hy2, hysteria2
@@ -129,7 +130,7 @@ def format_config_remark(config_str, ping_ms):
     return config_str
 
 def fetch_and_deduplicate_sources():
-    """بخش اصلاح‌شده: حذف ۱۰۰٪ تکراری‌ها بر اساس ترکیب آی‌پی/هاست و پورت"""
+    """حذف ۱۰۰٪ تکراری‌ها بر اساس ترکیب آی‌پی/هاست و پورت"""
     all_configs = []
     seen_hostports = set()
     
@@ -150,7 +151,6 @@ def fetch_and_deduplicate_sources():
                                 seen_hostports.add(key)
                                 all_configs.append(line)
                         else:
-                            # در صورت عدم امکان پارس آی‌پی، بررسی بر اساس متن لینک
                             core_config = line.split('#')[0]
                             if core_config not in seen_hostports:
                                 seen_hostports.add(core_config)
@@ -173,7 +173,7 @@ def send_telegram_part(bot_token, chat_id, file_path, count):
         f"⚡️ <b>حداکثر پینگ:</b> زیر 500ms (تست شده)\n"
         f"🎯 <b>پورت‌های ویژه اولویت‌دار:</b> 443, 8880, 8080\n\n"
         f"💬 <b>تبادل و چت:</b>\n{MY_CHAT_GROUP}\n\n"
-        f"📅 <b>وضعیت به‌روزرسانی:</b> تایید شده ✅\n\n"
+        f"📅 <b>وضعیت به روزرسانی:</b> تایید شده ✅\n\n"
         f"✨ <b>منبع:</b>\nhttps://t.me/{MY_CHANNEL.replace('@', '')}"
     )
     
