@@ -127,21 +127,26 @@ def send_telegram_part(bot_token, chat_id, file_path, count):
         return
     
     file_name = os.path.basename(file_path)
+    
     caption = (
-        f"🚀 **گلچین سرورهای پرسرعت**\n\n"
-        f"📦 **نام فایل:** `{file_name}`\n"
-        f"📌 **تعداد کانفیگ‌های صددرصد سالم:** {count} عدد\n"
-        f"⚡️ **حداکثر پینگ:** زیر 500ms (تست شده)\n"
-        f"🎯 **پورت‌های ویژه اولویت‌دار:** 443, 8880, 8080\n\n"
-        f"💬 **تبادل و چت:**\n{MY_CHAT_GROUP}\n\n"
-        f"📅 **وضعیت به‌روزرسانی:** تایید شده ✅\n\n"
-        f"✨ **منبع:**\nhttps://t.me/{MY_CHANNEL.replace('@', '')}"
+        f"🚀 <b>گلچین سرورهای پرسرعت</b>\n\n"
+        f"📦 <b>نام فایل:</b> <code>{file_name}</code>\n"
+        f"📌 <b>تعداد کانفیگ‌های صددرصد سالم:</b> {count} عدد\n"
+        f"⚡️ <b>حداکثر پینگ:</b> زیر 500ms (تست شده)\n"
+        f"🎯 <b>پورت‌های ویژه اولویت‌دار:</b> 443, 8880, 8080\n\n"
+        f"💬 <b>تبادل و چت:</b>\n{MY_CHAT_GROUP}\n\n"
+        f"📅 <b>وضعیت به‌روزرسانی:</b> تایید شده ✅\n\n"
+        f"✨ <b>منبع:</b>\nhttps://t.me/{MY_CHANNEL.replace('@', '')}"
     )
     
     url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
     try:
         with open(file_path, "rb") as doc:
-            payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}
+            payload = {
+                "chat_id": chat_id, 
+                "caption": caption, 
+                "parse_mode": "HTML"
+            }
             files = {"document": doc}
             response = requests.post(url, data=payload, files=files, timeout=30)
             res_json = response.json()
