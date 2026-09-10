@@ -2,9 +2,9 @@ name: Ultimate V2Ray Config Collector & Speed Tester
 
 on:
   schedule:
-    # اجرای خودکار هر ۲ ساعت یک‌بار (در دقیقه ۱۷ برای جلویگیری از تاخیر گیت‌هاب)
+    # اجرای خودکار هر ۲ ساعت یک‌بار (در دقیقه ۱۷)
     - cron: '17 */2 * * *'
-  workflow_dispatch: # امکان اجرای دستی از تب Actions در گیت‌هاب
+  workflow_dispatch: # امکان اجرای دستی
 
 permissions:
   contents: write
@@ -24,15 +24,13 @@ jobs:
         with:
           python-version: '3.10'
 
-      # ۳. دانلود، استخراج و اعطای دسترسی اجرایی به هسته Xray
+      # ۳. دانلود مستقیم فایل اجرایی Xray (بدون نیاز به آنزیپ)
       - name: Install Xray Core
         run: |
           mkdir -p .xray_bin
-          XRAY_URL=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep "browser_download_url.*Xray-linux-64.zip" | cut -d '"' -f 4)
-          curl -L -o xray.zip $XRAY_URL
-          unzip -o xray.zip -d .xray_bin
+          curl -L -o .xray_bin/xray https://github.com/XTLS/Xray-core/releases/download/v1.8.23/xray-linux-64
           chmod +x .xray_bin/xray
-          echo "Xray-core successfully prepared at .xray_bin/xray"
+          echo "Xray-core binary directly installed!"
 
       # ۴. نصب کتابخانه‌های پیش‌نیاز پایتون
       - name: Install Python Dependencies
@@ -46,7 +44,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python process_configs_v2.py --concurrency 15 --max-latency-ms 600 --output-dir outputs
+          python main.py --concurrency 15 --max-latency-ms 600 --output-dir outputs
 
       # ۶. ذخیره خودکار فایل‌های خروجی و ثبت Commit در گیت‌هاب
       - name: Commit and Push Updated Subscriptions
@@ -55,10 +53,9 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add outputs/ history.db
           
-          # بررسی اینکه آیا تغییری در خروجی ایجاد شده است یا خیر
           if git diff --staged --quiet; then
             echo "No updates or new configs to commit."
           else
-            git commit -m "⚡️ Auto-update subscriptions [Hybrid Real Speed Tested]"
+            git commit -m "⚡️ Auto-update subscriptions [No-Zip Direct Binary]"
             git push
           fi
