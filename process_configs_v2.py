@@ -8,7 +8,7 @@ import socket
 import urllib.parse
 import requests
 
-# لیست جامع، یکتا و بدون تکرار منابع کانفیگ V2Ray
+# لیست جامع و یکتا منابع کانفیگ V2Ray
 SOURCES = [
     "https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/mix",
     "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_BASE64.txt",
@@ -123,6 +123,7 @@ def fetch_and_deduplicate_sources():
 
 def send_telegram_part(bot_token, chat_id, file_path, count):
     if not bot_token or not chat_id:
+        print(f"⚠️ TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing! Skipped sending {os.path.basename(file_path)}")
         return
     
     file_name = os.path.basename(file_path)
@@ -142,9 +143,14 @@ def send_telegram_part(bot_token, chat_id, file_path, count):
         with open(file_path, "rb") as doc:
             payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}
             files = {"document": doc}
-            requests.post(url, data=payload, files=files, timeout=30)
+            response = requests.post(url, data=payload, files=files, timeout=30)
+            res_json = response.json()
+            if not res_json.get("ok"):
+                print(f"❌ Telegram API Error for {file_name}: {res_json.get('description')}")
+            else:
+                print(f"✅ Successfully sent {file_name} to Telegram.")
     except Exception as e:
-        print(f"Error sending {file_name} to Telegram: {e}")
+        print(f"❌ Exception while sending {file_name} to Telegram: {e}")
 
 async def main():
     parser = argparse.ArgumentParser()
