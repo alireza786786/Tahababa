@@ -4,7 +4,7 @@ on:
   schedule:
     # اجرای خودکار هر ۲ ساعت یک‌بار (در دقیقه ۱۷)
     - cron: '17 */2 * * *'
-  workflow_dispatch: # امکان اجرای دستی از تب Actions
+  workflow_dispatch: # امکان اجرای دستی
 
 permissions:
   contents: write
@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: '3.10'
 
-      # ۳. دانلود مستقیم فایل اجرایی Xray (بدون زیپ)
+      # ۳. دانلود مستقیم فایل اجرایی Xray (بدون نیاز به آنزیپ)
       - name: Install Xray Core
         run: |
           mkdir -p .xray_bin
@@ -32,30 +32,31 @@ jobs:
           chmod +x .xray_bin/xray
           echo "Xray-core binary directly installed!"
 
-      # ۴. نصب کامل کتابخانه‌های پیش‌نیاز پایتون
+      # ۴. نصب کامل کتابخانه‌های پیش‌نیاز
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install aiohttp requests urllib3 httpx
 
-      # ۵. اجرای اسکریپت اصلی پردازش و تست واقعی کانفیگ‌ها
+      # ۵. اجرای دقیق اسکریپت پایتون شما (اصلاح نام فایل و پوشه خروجی)
       - name: Run Ultimate V2Ray Collector
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python main.py --concurrency 15 --max-latency-ms 600 --output-dir outputs
+          python process_configs_v2.py --concurrency 15 --max-latency-ms 600 --output-dir subs
 
-      # ۶. ذخیره خودکار فایل‌های خروجی و ثبت Commit در گیت‌هاب
+      # ۶. ذخیره خودکار فایل‌های خروجی در پوشه subs
       - name: Commit and Push Updated Subscriptions
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add outputs/ history.db || true
+          git add subs/ history.db || true
           
           if git diff --staged --quiet; then
             echo "No updates or new configs to commit."
           else
-            git commit -m "⚡️ Auto-update subscriptions [No-Zip Direct Binary]"
+            git commit -m "⚡️ Auto-update subscriptions [Fixed Script Path]"
             git push
           fi
