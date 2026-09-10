@@ -5,6 +5,8 @@ import json
 import os
 import re
 import socket
+import ssl
+import time
 import urllib.parse
 import requests
 
@@ -47,6 +49,8 @@ SOURCES = [
 
 MY_CHANNEL = "@Goodbaye_filtering"
 MY_CHAT_GROUP = "https://t.me/CONFIG_V2RAY_VIP"
+GOLDEN_PORTS = {443, 80, 8080, 8880, 2052, 2082, 2086, 8443, 2053, 2083, 2087, 2096}
+GEO_CACHE = {}
 
 def decode_base64(data):
     data = data.strip().replace('\n', '').replace('\r', '')
@@ -62,14 +66,12 @@ def encode_base64(data):
     return base64.b64encode(data.encode('utf-8')).decode('utf-8')
 
 def parse_host_port(config_str):
-    """استخراج دقیق آدرس و پورت جهت حذف تکراری‌های واقعی"""
     try:
         if config_str.startswith("vmess://"):
             body = config_str[8:]
             decoded = decode_base64(body)
             obj = json.loads(decoded)
             return str(obj.get("add", "")), int(obj.get("port", 0))
-        
         elif config_str.startswith("ss://"):
             body = config_str[5:].split("#")[0]
             if "@" in body:
@@ -77,13 +79,11 @@ def parse_host_port(config_str):
             else:
                 decoded = decode_base64(body)
                 hostport = decoded.rsplit("@", 1)[1] if "@" in decoded else ""
-            
             if ":" in hostport:
                 h = hostport.rpartition(":")[0]
                 p = hostport.rpartition(":")[2]
                 return h, int(p)
-                
-        else: # vless, trojan, hy2, hysteria2
+        else:
             parsed = urllib.parse.urlparse(config_str)
             if parsed.hostname and parsed.port:
                 return parsed.hostname, int(parsed.port)
@@ -92,51 +92,77 @@ def parse_host_port(config_str):
     return None, None
 
 def get_ip_info(host):
+    if host in GEO_CACHE:
+        return GEO_CACHE[host]
     try:
         ip = socket.gethostbyname(host)
-        res = requests.get(f"http://ip-api.com/json/{ip}?fields=country,countryCode,city", timeout=3).json()
+        res = requests.get(f"http://ip-api.com/json/{ip}?fields=country,countryCode,city", timeout=2).json()
         country = res.get("country", "Germany")
         country_code = res.get("countryCode", "DE")
         city = res.get("city", "Frankfurt am Main")
         flag = "".join(chr(127397 + ord(c)) for c in country_code.upper()) if len(country_code) == 2 else "🇩🇪"
-        return flag, country, city
+        res_tuple = (flag, country, city)
+        GEO_CACHE[host] = res_tuple
+        return res_tuple
     except Exception:
         return "🇩🇪", "Germany", "Frankfurt am Main"
 
+async def test_config_latency(host, port, timeout=2.5):
+    """تست واقعی اتصال شبکه بر اساس TCP Handshake"""
+    if not host or not port:
+        return None
+    start = time.time()
+    try:
+        fut = asyncio.open_connection(host, port)
+        reader, writer = await asyncio.wait_for(fut, timeout=timeout)
+        latency = (time.time() - start) * 1000
+        writer.close()
+        await writer.wait_closed()
+        return latency
+    except Exception:
+        return None
+
+def calculate_score(config_str, port, latency):
+    """الگوریتم امتیازدهی بر اساس پورت‌های طلایی، نوع پروتکل و پینگ"""
+    score = 1000.0 - (latency if latency else 999.0)
+    if port in GOLDEN_PORTS:
+        score += 200
+    if port == 443:
+        score += 150
+    if "pbk=" in config_str or "hysteria2://" in config_str or "hy2://" in config_str:
+        score += 300
+    return score
+
 def format_config_remark(config_str, ping_ms):
     flag, country, city = "🇩🇪", "Germany", "Frankfurt am Main"
-    remark = f"👉🆔{MY_CHANNEL}📡{flag}®️{country}©️{city}🅿️ping:{ping_ms:.2f}ms"
+    remark = f"👉🆔{MY_CHANNEL}📡{flag}®️{country}©️{city}🅿️ping:{ping_ms:.0f}ms"
     
     if config_str.startswith("vmess://"):
         try:
             raw = decode_base64(config_str[8:])
             data = json.loads(raw)
             flag, country, city = get_ip_info(data.get("add", ""))
-            data["ps"] = f"👉🆔{MY_CHANNEL}📡{flag}®️{country}©️{city}🅿️ping:{ping_ms:.2f}ms"
+            data["ps"] = f"👉🆔{MY_CHANNEL}📡{flag}®️{country}©️{city}🅿️ping:{ping_ms:.0f}ms"
             return "vmess://" + encode_base64(json.dumps(data, ensure_ascii=False))
         except Exception:
             return config_str
-
     elif any(config_str.startswith(p) for p in ["vless://", "trojan://", "ss://", "hy2://", "hysteria2://"]):
         try:
             parsed = urllib.parse.urlparse(config_str)
             flag, country, city = get_ip_info(parsed.hostname or "")
-            remark = f"👉🆔{MY_CHANNEL}📡{flag}®️{country}©️{city}🅿️ping:{ping_ms:.2f}ms"
+            remark = f"👉🆔{MY_CHANNEL}📡{flag}®️{country}©️{city}🅿️ping:{ping_ms:.0f}ms"
             base_url = config_str.split('#')[0]
             return f"{base_url}#{urllib.parse.quote(remark)}"
         except Exception:
             return config_str
-            
     return config_str
 
 def fetch_and_deduplicate_sources():
-    """حذف ۱۰۰٪ تکراری‌ها بر اساس ترکیب آی‌پی/هاست و پورت"""
     all_configs = []
     seen_hostports = set()
-    
     for url in SOURCES:
         try:
-            res = requests.get(url, timeout=8)
+            res = requests.get(url, timeout=6)
             if res.status_code == 200:
                 text = res.text.strip()
                 decoded = decode_base64(text)
@@ -149,12 +175,12 @@ def fetch_and_deduplicate_sources():
                             key = (host, port)
                             if key not in seen_hostports:
                                 seen_hostports.add(key)
-                                all_configs.append(line)
+                                all_configs.append((line, host, port))
                         else:
                             core_config = line.split('#')[0]
                             if core_config not in seen_hostports:
                                 seen_hostports.add(core_config)
-                                all_configs.append(line)
+                                all_configs.append((line, None, None))
         except Exception:
             continue
     return all_configs
@@ -165,13 +191,11 @@ def send_telegram_part(bot_token, chat_id, file_path, count):
         return
     
     file_name = os.path.basename(file_path)
-    
     caption = (
-        f"🚀 <b>گلچین سرورهای پرسرعت</b>\n\n"
+        f"🚀 <b>گلچین سرورهای پرسرعت (تست شده)</b>\n\n"
         f"📦 <b>نام فایل:</b> <code>{file_name}</code>\n"
-        f"📌 <b>تعداد کانفیگ‌های صددرصد سالم:</b> {count} عدد\n"
-        f"⚡️ <b>حداکثر پینگ:</b> زیر 500ms (تست شده)\n"
-        f"🎯 <b>پورت‌های ویژه اولویت‌دار:</b> 443, 8880, 8080\n\n"
+        f"📌 <b>تعداد کانفیگ‌های سالم:</b> {count} عدد\n"
+        f"⚡️ <b>وضعیت شبکه:</b> تست زنده TCP + اولویت پورت‌های طلایی (443, 8080)\n\n"
         f"💬 <b>تبادل و چت:</b>\n{MY_CHAT_GROUP}\n\n"
         f"📅 <b>وضعیت به روزرسانی:</b> تایید شده ✅\n\n"
         f"✨ <b>منبع:</b>\nhttps://t.me/{MY_CHANNEL.replace('@', '')}"
@@ -180,44 +204,58 @@ def send_telegram_part(bot_token, chat_id, file_path, count):
     url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
     try:
         with open(file_path, "rb") as doc:
-            payload = {
-                "chat_id": chat_id, 
-                "caption": caption, 
-                "parse_mode": "HTML"
-            }
+            payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML"}
             files = {"document": doc}
-            response = requests.post(url, data=payload, files=files, timeout=30)
-            res_json = response.json()
-            if not res_json.get("ok"):
-                print(f"❌ Telegram API Error for {file_name}: {res_json.get('description')}")
-            else:
+            res = requests.post(url, data=payload, files=files, timeout=30).json()
+            if res.get("ok"):
                 print(f"✅ Successfully sent {file_name} to Telegram.")
+            else:
+                print(f"❌ Telegram API Error: {res.get('description')}")
     except Exception as e:
-        print(f"❌ Exception while sending {file_name} to Telegram: {e}")
+        print(f"❌ Exception while sending {file_name}: {e}")
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--concurrency", type=int, default=15)
-    parser.add_argument("--max-latency-ms", type=int, default=600)
     parser.add_argument("--output-dir", type=str, default="subs")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
     raw_configs = fetch_and_deduplicate_sources()
     
+    # تست زنده شبکه هم‌زمان (Concurrency)
+    semaphore = asyncio.Semaphore(50)
+    tested_configs = []
+
+    async def worker(item):
+        cfg, host, port = item
+        if not host or not port:
+            return
+        async with semaphore:
+            latency = await test_config_latency(host, port)
+            if latency is not None and latency < 800:
+                score = calculate_score(cfg, port, latency)
+                tested_configs.append({'config': cfg, 'latency': latency, 'score': score})
+
+    tasks = [worker(item) for item in raw_configs]
+    await asyncio.gather(*tasks)
+
+    # مرتب‌سازی بر اساس امتیاز مهندسی (بهترین‌ها در بالا)
+    tested_configs.sort(key=lambda x: x['score'], reverse=True)
+
     processed_configs = []
-    for cfg in raw_configs:
-        simulated_ping = 240.00
-        formatted_cfg = format_config_remark(cfg, simulated_ping)
-        processed_configs.append(formatted_cfg)
+    for item in tested_configs:
+        formatted = format_config_remark(item['config'], item['latency'])
+        processed_configs.append(formatted)
 
     full_text = "\n".join(processed_configs)
+    
+    # ساخت فایل‌های سابسکریپشن یکپارچه (جهت لینک ثابت)
     with open(os.path.join(args.output_dir, "plain.txt"), "w", encoding="utf-8") as f:
         f.write(full_text)
     with open(os.path.join(args.output_dir, "sub.txt"), "w", encoding="utf-8") as f:
         f.write(encode_base64(full_text))
 
-    # تقسیم به پارت‌های ۲۰۰‌تایی
+    # تقسیم به پارت‌های ۲۰۰‌تایی برای تلگرام
     part_size = 200
     chunks = [processed_configs[i:i + part_size] for i in range(0, len(processed_configs), part_size)]
     
@@ -227,13 +265,11 @@ async def main():
     for idx, chunk in enumerate(chunks, 1):
         file_name = f"subscription_part{idx}.txt"
         file_path = os.path.join(args.output_dir, file_name)
-        
         with open(file_path, "w", encoding="utf-8") as f:
             f.write("\n".join(chunk))
-        
         send_telegram_part(bot_token, chat_id, file_path, len(chunk))
 
-    print(f"Successfully created {len(chunks)} parts with up to 200 configs each.")
+    print(f"Successfully processed {len(processed_configs)} active configs across {len(chunks)} parts.")
 
 if __name__ == "__main__":
     asyncio.run(main())
