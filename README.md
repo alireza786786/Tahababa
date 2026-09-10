@@ -31,7 +31,7 @@
 
 جهت اتصال سریع و مستقیم در نرم‌افزارهای **v2rayNG**, **Sing-box**, **Streisand** یا **NekoBox**:
 
-> 🔗 **لینک سابسکریپشن مستقم (Base64):**
+> 🔗 **لینک سابسکریپشن مستقیم (Base64):**
 > ```text
 > [https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/sub.txt](https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/sub.txt)
 > ```
