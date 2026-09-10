@@ -105,6 +105,50 @@ def decode_base64_text(text):
         pass
     return text
 
+def get_config_fingerprint(config):
+    """ایجاد اثر انگشت منحصربه‌فرد برای شناسایی کانفیگ‌های تکراری"""
+    try:
+        config = config.strip()
+        if config.startswith("vmess://"):
+            b64_data = config[8:]
+            b64_data += '=' * (-len(b64_data) % 4)
+            decoded = base64.b64decode(b64_data).decode('utf-8')
+            data = json.loads(decoded)
+            add = str(data.get("add", "")).lower().strip()
+            port = str(data.get("port", "")).strip()
+            id_val = str(data.get("id", "")).lower().strip()
+            path = str(data.get("path", "")).strip()
+            return f"vmess:{add}:{port}:{id_val}:{path}"
+        else:
+            proto = config.split("://")[0].lower()
+            # حذف بخش remark بعد از #
+            core_part = config.split("#")[0]
+            # حذف بخش پارامترها بعد از ?
+            server_part = core_part.split("?")[0]
+            
+            # استخراج نام کاربری/آیدی و آدرس سرور:پورت
+            match = re.search(r'://(?:([^@]+)@)?([^:/]+)(?::(\d+))?', server_part)
+            if match:
+                user_info = (match.group(1) or "").lower().strip()
+                host = (match.group(2) or "").lower().strip()
+                port = match.group(3) or ""
+                return f"{proto}:{host}:{port}:{user_info}"
+    except Exception:
+        pass
+    # پشتیبان در صورت عدم موفقیت در پارس کردن
+    return config.split("#")[0].strip()
+
+def deduplicate_configs(config_list):
+    """حذف هوشمند کانفیگ‌های تکراری بر اساس اثر انگشت سرور"""
+    seen_fingerprints = set()
+    unique_list = []
+    for cfg in config_list:
+        fp = get_config_fingerprint(cfg)
+        if fp not in seen_fingerprints:
+            seen_fingerprints.add(fp)
+            unique_list.append(cfg)
+    return unique_list
+
 def extract_port(config):
     try:
         if config.startswith("vmess://"):
@@ -284,7 +328,8 @@ async def main():
             except Exception as e:
                 print(f"Error fetching source {src}: {e}")
 
-        unique_raw_configs = list(set(raw_configs))
+        # حذف تکراری‌ها قبل از تست بر اساس fingerprint
+        unique_raw_configs = deduplicate_configs(raw_configs)
         print(f"\nTotal Configs Fetched: {len(raw_configs)}")
         print(f"Unique Configs to Test: {len(unique_raw_configs)}")
 
@@ -322,7 +367,8 @@ async def main():
             geo = get_cached_geo(host) if host else ("Unknown", "XX", "Unknown")
             final_configs.append(remark_config(cfg, lat, CHANNEL_NAME, geo))
 
-        final_configs = list(dict.fromkeys(final_configs))
+        # یک مرحله فیلتر مجدد نهایی برای اطمینان ۱۰۰٪
+        final_configs = deduplicate_configs(final_configs)
 
         # تقسیم کانفیگ‌های سالم بین ۳ فایل txt
         generated_files = []
