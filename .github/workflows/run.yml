@@ -2,8 +2,8 @@ name: V2Ray Collector & Tester Pipeline
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # اجرای خودکار هر ۲ ساعت یک‌بار
-  workflow_dispatch:        # امکان اجرای دستی از تب Actions
+    - cron: '17 */2 * * *'  # اجرای خودکار هر ۲ ساعت یک‌بار (دقیقه ۱۷ برای جلوگیری از تاخیر گیت‌هاب)
+  workflow_dispatch:        # قابلیت اجرای دستی از تب Actions
 
 jobs:
   build-and-run:
