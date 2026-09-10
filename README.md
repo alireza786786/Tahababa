@@ -1,70 +1,39 @@
-<div align="center">
+# 🚀 ربات هوشمند جمع‌آوری و ساخت لینک اشتراک V2Ray
 
-# ⚡ V2Ray Config Collector & Tester ⚡
+<p center">
+  <img src="https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram Logo" />
+</p>
 
-  <p align="center">
-    <b>سیستم هوشمند دریافت، تست سلامت واقعی با Xray Core، استخراج موقعیت جغرافیایی و ارسال خودکار به تلگرام</b>
-    <br />
-    <a href="https://github.com/ebrasha/free-v2ray-public-list"><strong>مشاهده منبع کانفیگ‌ها »</strong></a>
-    <br />
-    <br />
-    <img src="https://img.shields.io/github/actions/workflow/status/alireza786786/Tahababa/run.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=Workflow%20Status" alt="Workflow Status" />
-    <img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11" />
-    <img src="https://img.shields.io/badge/Xray--Core-Latest-blue?style=for-the-badge&logo=v2ray&logoColor=white" alt="Xray Core" />
-    <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License" />
-  </p>
+پروژه پیشرفته جمع‌آوری، تفکیک، همزادزدایی و دسته‌بندی هوشمند کانفیگ‌های V2Ray (شامل VMess, VLess, Trojan, ShadowSocks, Hysteria2) بر اساس پرچم، کشور و پینگ واقعی.
 
 ---
 
-</div>
+### 📢 کانال‌های رسمی پروژه
 
-## 📌 معرفی پروژه
-
-این پروژه یک راه‌کار خودکار و قدرتمند مبتنی بر **GitHub Actions** و **Python AsyncIO** است که به‌صورت دوره‌ای (هر ۱۵ دقیقه) کانفیگ‌های V2Ray را جمع‌آوری کرده، آن‌ها را با استفاده از هسته واقعی **Xray-Core** ارزیابی می‌کند و خروجی‌های سالم را در ۳ لینک سابسکرایب مجزا قرار داده و نسخه زیپ آن را به تلگرام ارسال می‌نماید.
-
----
-
-## 📡 لینک‌های سابسکرایب مستقیم (Subscription Links)
-
-شما می‌توانید لینک‌های زیر را مستقیماً کپی کرده و وارد نرم‌افزارهای خود (v2rayNG, Streisand, Shadowrocket, NekoBox و...) کنید. این لینک‌ها هر **۱۵ دقیقه** به‌صورت خودکار آپدیت می‌شوند:
-
-| بخش | سهم کانفیگ‌ها | لینک سابسکرایب (جهت کپی در برنامه) |
-| :---: | :---: | :--- |
-| 🚀 **پارت اول** | ۳۳٪ کل | `https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/subscription_part1.txt` |
-| ⚡ **پارت دوم** | ۳۳٪ کل | `https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/subscription_part2.txt` |
-| 🔥 **پارت سوم** | ۳۴٪ کل | `https://raw.githubusercontent.com/alireza786786/Tahababa/main/subs/subscription_part3.txt` |
+* 🆔 **کانال اصلی:** [Goodbaye_filtering@](https://t.me/Goodbaye_filtering)
+* 💬 **گروه چت و تبادل:** [CONFIG_V2RAY_VIP](https://t.me/CONFIG_V2RAY_VIP)
 
 ---
 
-## ✨ قابلیت‌های کلیدی
+### 📦 لینک‌های اشتراک (Subscription Links)
 
-- 🚀 **تست سلامت واقعی با Xray Core:** ارزیابی واقعی اتصال به‌وسیله موتور Xray به‌جای پینگ ساده TCP.
-- ⚡ **سرعت بالا (Async/Parallel):** پردازش همزمان ده‌ها کانفیگ با استفاده از `asyncio` و `aiohttp`.
-- 📍 **شناسایی موقعیت جغرافیایی (GeoIP):** استخراج کشور، پرچم کشور و شهر سرورها با سیستم کش‌سازی هوشمند.
-- 🏷 **برچسب‌گذاری و تغییر برند (Remarking):** جایگزینی خودکار نام کانال و افزودن متاداده‌ها با فرمت:
-  `👉🆔@Goodbaye_filtering📡🚩®️Country©️City🅿️ping:XXms`
-- 📊 **تقسیم متوازن به ۳ لینک:** توزیع دقیق کانفیگ‌های سالم بین ۳ فایل سابسکرایب مجزا.
-- 📦 **فشرده‌سازی و ارسال به تلگرام:** بسته‌بندی فایل‌ها به صورت ZIP و ارسال مستقیم به کانال/چت تلگرام.
+شما می‌توانید از لینک‌های زیر در تمامی نرم‌افزارهای V2Ray (مانند v2rayNG, Streisand, Sing-box, NekoBox) استفاده کنید:
+
+* 🔗 **لینک اشتراک Base64:**
+  `https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/subs/sub.txt`
+
+* 📄 **لینک اشتراک Plain Text:**
+  `https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/subs/plain.txt`
+
+*(به جای `USERNAME/REPOSITORY` آیدی اکانت و نام ریپازیتوری خود در گیت‌هاب را قرار دهید)*
 
 ---
 
-## 🛠 معماری و نحوه کارکرد
+### ✨ ویژگی‌ها
+* 🔄 به‌روزرسانی خودکار و منظم
+* ❌ حذف دقیق کدهای تکراری و همزاد
+* 🌍 شناسایی موقعیت کشور و پرچم سرورها
+* 📦 تقسیم کانفیگ‌ها به پارت‌های ۲۰۰‌تایی جهت استفاده آسان
+* 📮 ارسال مستقیم پارت‌ها به همراه کاور اختصاصی به تلگرام
 
-```text
-[ Sources / Raw Configs ]
-           │
-           ▼
-[ Fetch & Deduplicate ]
-           │
-           ▼
-[ Xray-Core Health Test ] ──► (Filter Latency > 250ms)
-           │
-           ▼
-[ Batch GeoIP & Cache ]  ──► (SQLite Database)
-           │
-           ▼
-[ Remark & Split into 3 Parts ]
-           │
-           ├──────────────────────────────┐
-           ▼                              ▼
-[ Update Subscription Links ]    [ Send ZIP to Telegram ]
+✨ **منبع رسمی:** [Goodbaye_filtering@](https://t.me/Goodbaye_filtering)
