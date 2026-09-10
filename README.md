@@ -1,39 +1,16 @@
-# 🚀 ربات هوشمند جمع‌آوری و ساخت لینک اشتراک V2Ray
+# 🚀 V2Ray Pipeline & Subscription Engine
 
-<p center">
-  <img src="https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram Logo" />
-</p>
+![Automated Processing](https://github.com/morteza-f-1990/v2ray-configs/actions/workflows/main.yml/badge.svg)
+![Python Version](https://img.shields.io/badge/Python-3.10-blue.svg?style=flat&logo=python)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
+![Status](https://img.shields.io/badge/Status-Active-brightgreen)
 
-پروژه پیشرفته جمع‌آوری، تفکیک، همزادزدایی و دسته‌بندی هوشمند کانفیگ‌های V2Ray (شامل VMess, VLess, Trojan, ShadowSocks, Hysteria2) بر اساس پرچم، کشور و پینگ واقعی.
-
----
-
-### 📢 کانال‌های رسمی پروژه
-
-* 🆔 **کانال اصلی:** [Goodbaye_filtering@](https://t.me/Goodbaye_filtering)
-* 💬 **گروه چت و تبادل:** [CONFIG_V2RAY_VIP](https://t.me/CONFIG_V2RAY_VIP)
+یک سیستم قدرتمند، خودکار و صنعتی برای جمع‌آوری، تست زنده (TCP Handshake)، رتبه‌بندی هوشمند بر اساس پورت‌های طلایی و انتشار کانفیگ‌های پاک‌سازی‌شده V2Ray در تلگرام و لینک‌های سابسکریپشن.
 
 ---
 
-### 📦 لینک‌های اشتراک (Subscription Links)
+## 📸 نمای کلی سیستم (System Overview)
 
-شما می‌توانید از لینک‌های زیر در تمامی نرم‌افزارهای V2Ray (مانند v2rayNG, Streisand, Sing-box, NekoBox) استفاده کنید:
-
-* 🔗 **لینک اشتراک Base64:**
-  `https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/subs/sub.txt`
-
-* 📄 **لینک اشتراک Plain Text:**
-  `https://raw.githubusercontent.com/USERNAME/REPOSITORY/main/subs/plain.txt`
-
-*(به جای `USERNAME/REPOSITORY` آیدی اکانت و نام ریپازیتوری خود در گیت‌هاب را قرار دهید)*
-
----
-
-### ✨ ویژگی‌ها
-* 🔄 به‌روزرسانی خودکار و منظم
-* ❌ حذف دقیق کدهای تکراری و همزاد
-* 🌍 شناسایی موقعیت کشور و پرچم سرورها
-* 📦 تقسیم کانفیگ‌ها به پارت‌های ۲۰۰‌تایی جهت استفاده آسان
-* 📮 ارسال مستقیم پارت‌ها به همراه کاور اختصاصی به تلگرام
-
-✨ **منبع رسمی:** [Goodbaye_filtering@](https://t.me/Goodbaye_filtering)
+<div align="center">
+  <img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" width="100%" />
+</div>
