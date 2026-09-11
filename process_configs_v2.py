@@ -10,7 +10,6 @@ import time
 import urllib.parse
 import requests
 
-# لیست جامع و یکتا منابع کانفیگ V2Ray
 SOURCES = [
     "https://raw.githubusercontent.com/iboxz/free-v2ray-collector/main/main/mix",
     "https://raw.githubusercontent.com/roosterkid/openproxylist/main/V2RAY_BASE64.txt",
@@ -107,8 +106,7 @@ def get_ip_info(host):
     except Exception:
         return "🇩🇪", "Germany", "Frankfurt am Main"
 
-async def test_config_latency(host, port, timeout=2.5):
-    """تست واقعی اتصال شبکه بر اساس TCP Handshake"""
+async def test_config_latency(host, port, timeout=1.8):
     if not host or not port:
         return None
     start = time.time()
@@ -123,7 +121,6 @@ async def test_config_latency(host, port, timeout=2.5):
         return None
 
 def calculate_score(config_str, port, latency):
-    """الگوریتم امتیازدهی بر اساس پورت‌های طلایی، نوع پروتکل و پینگ"""
     score = 1000.0 - (latency if latency else 999.0)
     if port in GOLDEN_PORTS:
         score += 200
@@ -195,7 +192,7 @@ def send_telegram_part(bot_token, chat_id, file_path, count):
         f"🚀 <b>گلچین سرورهای پرسرعت (تست شده)</b>\n\n"
         f"📦 <b>نام فایل:</b> <code>{file_name}</code>\n"
         f"📌 <b>تعداد کانفیگ‌های سالم:</b> {count} عدد\n"
-        f"⚡️ <b>وضعیت شبکه:</b> تست زنده TCP + اولویت پورت‌های طلایی (443, 8080)\n\n"
+        f"⚡️ <b>وضعیت شبکه:</b> تست زنده TCP (پینگ زیر ۵۰۰ms) + پورت‌های طلایی\n\n"
         f"💬 <b>تبادل و چت:</b>\n{MY_CHAT_GROUP}\n\n"
         f"📅 <b>وضعیت به روزرسانی:</b> تایید شده ✅\n\n"
         f"✨ <b>منبع:</b>\nhttps://t.me/{MY_CHANNEL.replace('@', '')}"
@@ -222,7 +219,6 @@ async def main():
     os.makedirs(args.output_dir, exist_ok=True)
     raw_configs = fetch_and_deduplicate_sources()
     
-    # تست زنده شبکه هم‌زمان (Concurrency)
     semaphore = asyncio.Semaphore(50)
     tested_configs = []
 
@@ -232,14 +228,14 @@ async def main():
             return
         async with semaphore:
             latency = await test_config_latency(host, port)
-            if latency is not None and latency < 800:
+            # فقط کانفیگ‌های با پینگ زیر ۵۰۰ میلی‌ثانیه تایید می‌شوند
+            if latency is not None and latency < 500:
                 score = calculate_score(cfg, port, latency)
                 tested_configs.append({'config': cfg, 'latency': latency, 'score': score})
 
     tasks = [worker(item) for item in raw_configs]
     await asyncio.gather(*tasks)
 
-    # مرتب‌سازی بر اساس امتیاز مهندسی (بهترین‌ها در بالا)
     tested_configs.sort(key=lambda x: x['score'], reverse=True)
 
     processed_configs = []
@@ -249,13 +245,11 @@ async def main():
 
     full_text = "\n".join(processed_configs)
     
-    # ساخت فایل‌های سابسکریپشن یکپارچه (جهت لینک ثابت)
     with open(os.path.join(args.output_dir, "plain.txt"), "w", encoding="utf-8") as f:
         f.write(full_text)
     with open(os.path.join(args.output_dir, "sub.txt"), "w", encoding="utf-8") as f:
         f.write(encode_base64(full_text))
 
-    # تقسیم به پارت‌های ۲۰۰‌تایی برای تلگرام
     part_size = 200
     chunks = [processed_configs[i:i + part_size] for i in range(0, len(processed_configs), part_size)]
     
@@ -269,7 +263,7 @@ async def main():
             f.write("\n".join(chunk))
         send_telegram_part(bot_token, chat_id, file_path, len(chunk))
 
-    print(f"Successfully processed {len(processed_configs)} active configs across {len(chunks)} parts.")
+    print(f"Successfully processed {len(processed_configs)} high-speed configs across {len(chunks)} parts.")
 
 if __name__ == "__main__":
     asyncio.run(main())
